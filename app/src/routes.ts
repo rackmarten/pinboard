@@ -125,6 +125,20 @@ function validateRelationType(value: unknown): string {
   return value as string;
 }
 
+// The executors foreman actually runs: "cli" is the full worktree/PR
+// pipeline and a seat's default runner, "cli-host" the unrestricted chat
+// persona, "8ball" the LLM gateway path (reached only through a routing
+// rule). Anything else would be skipped by dispatch, so it is refused here.
+// Rows saved before this check stay readable; only writes are validated.
+export const AGENT_EXECUTORS = ["cli", "cli-host", "8ball"];
+
+function validateAgentExecutor(value: unknown): string {
+  if (!AGENT_EXECUTORS.includes(value as string)) {
+    throw badRequest(`executor must be one of ${AGENT_EXECUTORS.join(", ")}`);
+  }
+  return value as string;
+}
+
 // I15: pull request lifecycle state, kept fresh by foreman polling `gh pr view`.
 const PR_STATES = ["open", "merged", "closed"];
 
@@ -1219,6 +1233,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     if (!body.name || !body.provider || !body.executor || !body.licenseId) {
       throw badRequest("name, provider, executor and licenseId are required");
     }
+    validateAgentExecutor(body.executor);
     const [agent] = await db
       .insert(agents)
       .values({ ...body, name: body.name, provider: body.provider, executor: body.executor, licenseId: body.licenseId })
@@ -1246,6 +1261,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     // req.body is only cast, not schema-validated - a stray "name" field
     // would otherwise pass straight through to .set() despite the type above.
     delete (req.body as Record<string, unknown>).name;
+    if (body.executor !== undefined) validateAgentExecutor(body.executor);
     const [agent] = await db.update(agents).set(body).where(eq(agents.id, id)).returning();
     if (!agent) return reply.code(404).send({ error: "not found" });
     return agent;

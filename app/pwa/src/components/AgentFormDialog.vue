@@ -1,7 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { useBackClose } from "@rackmarten/ui-kit";
-import { createAgent, updateAgent, getLicenses, AUTONOMY_LEVELS, type Agent, type License } from "../api.js";
+import {
+  createAgent,
+  updateAgent,
+  getLicenses,
+  AGENT_EXECUTORS,
+  AUTONOMY_LEVELS,
+  defaultAgentExecutor,
+  type Agent,
+  type License,
+} from "../api.js";
 
 const props = defineProps<{
   modelValue: boolean;
@@ -24,7 +33,7 @@ const name = ref("");
 const role = ref("");
 const provider = ref("");
 const model = ref("");
-const executor = ref("");
+const executor = ref(defaultAgentExecutor());
 const autonomyLevel = ref(0);
 const credentialRef = ref("");
 const routingWeight = ref(1);
@@ -33,6 +42,7 @@ const isHost = ref(false);
 const licenseId = ref<number | null>(null);
 const licenses = ref<License[]>([]);
 const saving = ref(false);
+const executorHint = computed(() => AGENT_EXECUTORS.find((e) => e.value === executor.value)?.hint ?? "Not a value foreman runs - pick one");
 const error = ref<string | null>(null);
 
 function reset(): void {
@@ -41,7 +51,7 @@ function reset(): void {
   role.value = a?.role ?? "";
   provider.value = a?.provider ?? "";
   model.value = a?.model ?? "";
-  executor.value = a?.executor ?? "";
+  executor.value = defaultAgentExecutor(a);
   autonomyLevel.value = a?.autonomyLevel ?? 0;
   credentialRef.value = a?.credentialRef ?? "";
   routingWeight.value = a?.routingWeight ?? 1;
@@ -103,7 +113,16 @@ async function save(): Promise<void> {
         <v-text-field v-model="role" label="Role" density="comfortable" hint="e.g. code-runner, planning-chat" persistent-hint />
         <div class="d-flex ga-3">
           <v-text-field v-model="provider" label="Provider" density="comfortable" hint="e.g. anthropic, 8ball, human" persistent-hint />
-          <v-text-field v-model="executor" label="Executor" density="comfortable" hint="e.g. cli, api, human" persistent-hint />
+          <v-select
+            v-model="executor"
+            :items="AGENT_EXECUTORS"
+            item-title="title"
+            item-value="value"
+            label="Executor"
+            density="comfortable"
+            :hint="executorHint"
+            persistent-hint
+          />
         </div>
         <v-text-field v-model="model" label="Model" density="comfortable" hint="Leave blank to use foreman's own default" persistent-hint />
         <v-select v-model="autonomyLevel" :items="AUTONOMY_LEVELS" item-title="title" item-value="value" label="Max autonomy level" density="comfortable" />

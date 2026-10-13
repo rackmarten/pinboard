@@ -13,6 +13,11 @@ publishes the container image `ghcr.io/rackmarten/pinboard` at that version.
   now uses `cli`, and the README quickstart says agents need executor `cli`.
   Without a GitHub token foreman stops before claiming the task, so the script
   also accepts foreman's own "started" log line as the pickup.
+- The agent form's Executor was free text ("e.g. cli, api, human"), so an
+  agent could be saved with a value foreman never runs and its tasks sat in
+  `queued`. It is now a select of `cli` (the default), `cli-host` and `8ball`,
+  each with a one-line hint, and `POST`/`PATCH /agents` reject any other
+  executor with a 400. Agents saved earlier with another value still load.
 
 ## [0.1.0] - 2026-10-13
 
