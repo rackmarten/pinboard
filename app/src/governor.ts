@@ -4,7 +4,7 @@ import { db, sql } from "./db/client.js";
 import { agents, budgetRateHistory, budgetRates, tasks, usageObservations } from "./db/schema.js";
 import { getLicenseSettings } from "./licenses.js";
 import { getPlannerSettings } from "./settings.js";
-import { currentWeeklyResetStart } from "./usage.js";
+import { calibrationCostUsd, currentWeeklyResetStart } from "./usage.js";
 
 export type Scope = "week" | "session";
 export type GovernorState = "unconfigured" | "healthy" | "over_rate" | "danger" | "critical";
@@ -154,13 +154,23 @@ export function estimatePercent(costUsd: number, usdPerPercent: number | null): 
   return costUsd / usdPerPercent;
 }
 
+// Agent spend plus interactive-session spend - see usage.ts's
+// calibrationCostUsd for which sources count here.
 async function sumCostBetween(start: Date, end: Date): Promise<number> {
-  const [row] = await sql<{ total: string | null }[]>`
-    select coalesce(sum(cost_usd::numeric), 0) as total
-    from handoffs
-    where created_at >= ${start.toISOString()} and created_at <= ${end.toISOString()}
-  `;
-  return Number(row?.total ?? 0);
+  const [[row], eventRows] = await Promise.all([
+    sql<{ total: string | null }[]>`
+      select coalesce(sum(cost_usd::numeric), 0) as total
+      from handoffs
+      where created_at >= ${start.toISOString()} and created_at <= ${end.toISOString()}
+    `,
+    sql<{ source: string; total: string }[]>`
+      select source, coalesce(sum(cost_usd::numeric), 0) as total
+      from usage_events
+      where occurred_at >= ${start.toISOString()} and occurred_at <= ${end.toISOString()}
+      group by source
+    `,
+  ]);
+  return calibrationCostUsd(Number(row?.total ?? 0), Object.fromEntries(eventRows.map((r) => [r.source, Number(r.total)])));
 }
 
 async function sumCostSince(start: Date): Promise<number> {

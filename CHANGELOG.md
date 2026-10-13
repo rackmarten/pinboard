@@ -7,6 +7,14 @@ publishes the container image `ghcr.io/rackmarten/pinboard` at that version.
 
 ## [Unreleased]
 
+### Added
+- `POST /api/usage` records spend reported by an interactive Claude Code
+  session (`{costUsd, source: "interactive", linuxUser, sessionId}`), with the
+  license resolved from its Linux user. A repeat of the same session and cost
+  within a minute is stored once. Interactive spend counts toward the
+  governor's calibration and shows as its own figure in the usage view, but
+  never toward the period or session spend that gates dispatch.
+
 ### Changed
 - Cost estimates now scale with a task's effort, on by default. A task with
   an effort is estimated at the mean cost of completed tasks at that effort

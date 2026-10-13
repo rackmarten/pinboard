@@ -431,7 +431,7 @@ export const usageEvents = pgTable("usage_events", {
   occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
   // Same text-for-money precedent as handoffs.costUsd - see the note there.
   costUsd: text("cost_usd").notNull(),
-  source: text("source").notNull(), // "handoff" | "chat"
+  source: text("source").notNull(), // "handoff" | "chat" | "interactive" (plan.ts UsageSource)
   taskId: integer("task_id").references(() => tasks.id),
   chatThreadId: integer("chat_thread_id").references(() => chatThreads.id),
   handoffId: integer("handoff_id").references(() => handoffs.id),
