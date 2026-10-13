@@ -66,6 +66,20 @@ export const AUTONOMY_LEVELS = [
   { value: 5, title: "5 - Full autonomy" },
 ] as const;
 
+// The executors foreman runs, mirrored from the API's AGENT_EXECUTORS (which
+// rejects anything else). "cli" first: it is the default for a new agent.
+export const AGENT_EXECUTORS = [
+  { value: "cli", title: "cli", hint: "Claude Code runner: worktree, commits, PR. A seat's default for queued tasks" },
+  { value: "cli-host", title: "cli-host", hint: "Unrestricted chat persona; never picked up by dispatch" },
+  { value: "8ball", title: "8ball", hint: "LLM gateway, no repo or PR; only reached through a routing rule" },
+] as const;
+
+// a new agent starts on "cli"; an existing one keeps what it has, even a
+// value saved before the API started validating it.
+export function defaultAgentExecutor(agent?: { executor: string } | null): string {
+  return agent?.executor ?? AGENT_EXECUTORS[0].value;
+}
+
 export interface Project {
   id: number;
   slug: string;

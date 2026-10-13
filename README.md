@@ -60,9 +60,10 @@ The runner starts with nothing to work on. In the UI:
 1. Set a **budget period** on the default license (Plan page): the planner
    starts nothing while no period covers the current time.
 2. Create an **agent** (Settings → Agents): a name, model and autonomy level,
-   attached to the default license, with executor `cli`. foreman only hands
-   queued tasks to `cli` agents; an agent with any other executor is never
-   picked, and its tasks stay queued.
+   attached to the default license, with executor `cli` (the form's
+   default). foreman only hands queued tasks to `cli` agents; `cli-host` is
+   the chat persona and `8ball` the LLM gateway executor, reached only
+   through a routing rule.
 3. Create a **project** per repository, with `localPath` set to
    `<org>/<repo>` and `repoUrl` to its GitHub URL.
 4. Set `GH_TOKEN` in `.env` (a token with repo and workflow access to those
@@ -184,7 +185,7 @@ the root. Old root API calls are no longer aliased.
 | `GET /chat/stream?threadId=` (SSE) | foreman subscribes **outbound** and holds it open, so a human message, a new permission rule, an interrupt or a thread change reaches the live session in under a second instead of on its next poll. No inbound path to that LXC is created - the connection is always foreman's to open. Its own transcript events are filtered out. Heartbeat `: ping` every 20s |
 | `GET /chat/threads/:id/stream` (SSE) | the PWA's stream for one thread - everything concerning it, transcript included, so the live transcript renders without polling |
 | `POST /chat/threads/:id/interrupt` | the stop button's backend half - signals the live session on the stream (there is a session to interrupt now, not just a process to kill) and records it on the transcript. A stop delivered on the next poll has already let the tool call it meant to stop run |
-| `GET /agents` / `POST /agents` | List / create agent definitions - credentials never live here, see `credentialRef` in the schema. `licenseId` is required on create (see `/licenses` below) |
+| `GET /agents` / `POST /agents` | List / create agent definitions - credentials never live here, see `credentialRef` in the schema. `licenseId` is required on create (see `/licenses` below). `executor` must be one of `cli`, `cli-host`, `8ball` (the values foreman runs) or it's a 400, on `PATCH` too; existing rows with another value stay readable |
 | `PATCH /agents/:id` | Update an agent, including reassigning `licenseId`. Name isn't patchable |
 | `GET /licenses` / `POST /licenses` / `PATCH /licenses/:id` | an account/license under a provider (e.g. a second person's Claude seat) - `{name, provider, linuxUser, tokenEnvVar?, sessionBudgetUsd?, concurrencyLimit?, enabled?}`. `tokenEnvVar` is the name of the env var on foreman holding the seat's OAuth token (e.g. `CLAUDE_OAUTH_TOKEN_PETER`), never the token itself; null means foreman's own login. `sessionBudgetUsd`/`concurrencyLimit` are nullable overrides of the appSettings-level defaults. `recurrenceEnabled`/`recurrenceBudgetUsd` turn on weekly recurring budget periods; the amount must be positive while recurrence is on (400 otherwise). Mirrors `/agents`' CRUD shape - name isn't patchable |
 | `GET /labels` / `POST /labels` | List / create labels |
