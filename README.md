@@ -60,7 +60,9 @@ The runner starts with nothing to work on. In the UI:
 1. Set a **budget period** on the default license (Plan page): the planner
    starts nothing while no period covers the current time.
 2. Create an **agent** (Settings → Agents): a name, model and autonomy level,
-   attached to the default license.
+   attached to the default license, with executor `cli`. foreman only hands
+   queued tasks to `cli` agents; an agent with any other executor is never
+   picked, and its tasks stay queued.
 3. Create a **project** per repository, with `localPath` set to
    `<org>/<repo>` and `repoUrl` to its GitHub URL.
 4. Set `GH_TOKEN` in `.env` (a token with repo and workflow access to those
