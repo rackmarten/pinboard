@@ -11,6 +11,12 @@ pinboard is the work database and human UI of the pinboard/foreman pair: a
 Fastify + Drizzle API (`app/src`) and a Vue/Vuetify PWA (`app/pwa`) on
 Postgres. See README.md for what it does and how it is installed.
 
+Interactive spend (`POST /usage`, source `interactive`) is recorded, never
+gated: it feeds the governor's calibration and the usage view, but stays out
+of the period and session spend the planner gates dispatch on
+(`UNGATED_USAGE_SOURCES` in `app/src/usage.ts`). Keep it that way when
+touching any spend sum.
+
 ## General rules
 
 - Read the project documentation before making changes.

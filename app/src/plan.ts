@@ -30,6 +30,7 @@ import {
 import { getDefaultLicenseId, getLicense, getLicenseSettings } from "./licenses.js";
 import { getPlannerSettings, type PlannerSettings } from "./settings.js";
 import { ROOT_LABEL } from "./root-grants.js";
+import { countsTowardBudgetGate, UNGATED_USAGE_SOURCES, type UsageSource } from "./usage.js";
 import { describeRecurrence, dbRecurrenceStore, ensureRecurringPeriod } from "./recurrence.js";
 import {
   SESSION_WINDOW_MS,
@@ -568,25 +569,31 @@ export async function updateBudgetPeriod(
 // resolve it from the spending agent, falling back to the default license
 // (licenses.ts's getDefaultLicenseId) when there is no agent to resolve one
 // from.
+//
+// Returns the new row's id, or null when nothing was written (no spend).
 export async function recordUsageEvent(input: {
   costUsd: number;
-  source: "handoff" | "chat";
+  source: UsageSource;
   licenseId: number;
   taskId?: number | null;
   chatThreadId?: number | null;
   handoffId?: number | null;
   occurredAt?: Date;
-}): Promise<void> {
-  if (!Number.isFinite(input.costUsd) || input.costUsd <= 0) return;
-  await db.insert(usageEvents).values({
-    costUsd: String(input.costUsd),
-    source: input.source,
-    licenseId: input.licenseId,
-    taskId: input.taskId ?? null,
-    chatThreadId: input.chatThreadId ?? null,
-    handoffId: input.handoffId ?? null,
-    occurredAt: input.occurredAt,
-  });
+}): Promise<number | null> {
+  if (!Number.isFinite(input.costUsd) || input.costUsd <= 0) return null;
+  const [row] = await db
+    .insert(usageEvents)
+    .values({
+      costUsd: String(input.costUsd),
+      source: input.source,
+      licenseId: input.licenseId,
+      taskId: input.taskId ?? null,
+      chatThreadId: input.chatThreadId ?? null,
+      handoffId: input.handoffId ?? null,
+      occurredAt: input.occurredAt,
+    })
+    .returning({ id: usageEvents.id });
+  return row?.id ?? null;
 }
 
 async function sumUsageBetween(start: Date, end: Date, licenseId: number): Promise<number> {
@@ -595,16 +602,17 @@ async function sumUsageBetween(start: Date, end: Date, licenseId: number): Promi
     from usage_events
     where occurred_at >= ${start.toISOString()} and occurred_at <= ${end.toISOString()}
       and license_id = ${licenseId}
+      and source <> all(${UNGATED_USAGE_SOURCES as string[]})
   `;
   return Number(row?.total ?? 0);
 }
 
 async function recentCostEvents(since: Date, licenseId: number): Promise<CostEvent[]> {
   const rows = await db
-    .select({ occurredAt: usageEvents.occurredAt, costUsd: usageEvents.costUsd })
+    .select({ occurredAt: usageEvents.occurredAt, costUsd: usageEvents.costUsd, source: usageEvents.source })
     .from(usageEvents)
     .where(and(gte(usageEvents.occurredAt, since), eq(usageEvents.licenseId, licenseId)));
-  return rows.map((r) => ({ occurredAt: r.occurredAt as unknown as Date, costUsd: Number(r.costUsd) }));
+  return rows.filter((r) => countsTowardBudgetGate(r.source)).map((r) => ({ occurredAt: r.occurredAt as unknown as Date, costUsd: Number(r.costUsd) }));
 }
 
 // the most recent session-limit report for this license whose

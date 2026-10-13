@@ -21,8 +21,9 @@ import {
   chatEvents,
   chatPermissionRules,
   sessionLimitReports,
+  licenses,
 } from "./db/schema.js";
-import { getCostRollup, getUsageSummary, runDailyDigest } from "./usage.js";
+import { getCostRollup, getUsageSummary, InteractiveDedupe, licenseIdForLinuxUser, runDailyDigest } from "./usage.js";
 import { normalizeTaskEnums, parentMap, storyShouldComplete, isTerminalStatus, dependencySatisfied } from "./task-model.js";
 import { readinessApplies, readinessFailures, toWorkspaceRepos, type ReadinessTask, type WorkspaceRepo } from "./readiness.js";
 import { listJournal, recordEvent as recordJournalEvent, unreadNotificationCount } from "./journal.js";
@@ -343,6 +344,9 @@ const JOURNALED_TASK_FIELDS = [
 export const API_PREFIX = "/api";
 
 const CONFIG_ROUTE_PREFIXES = ["/agents", "/licenses", "/routing-rules", "/settings", "/plan/periods", "/labels", "/governor/rates"];
+
+// One per process, shared by every POST /usage - see usage.ts.
+const interactiveDedupe = new InteractiveDedupe();
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // /health is registered by server-kit's createApp (see index.ts).
@@ -1475,6 +1479,46 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // PLAN.md's I5: budget/burn-rate view. costUsd lives on `handoffs`, not
   // `tasks` (see usage.ts), so this is aggregation rather than a plain list.
   app.get("/usage/summary", async () => getUsageSummary());
+
+  // spend reported by an interactive Claude Code session (a session-end
+  // hook), recorded for calibration and the usage view but never counted
+  // toward the budget gate - see usage.ts's UNGATED_USAGE_SOURCES. The same
+  // (sessionId, costUsd) within a minute is stored once (InteractiveDedupe).
+  app.post(
+    "/usage",
+    {
+      schema: {
+        body: {
+          type: "object",
+          required: ["costUsd", "source", "linuxUser", "sessionId"],
+          additionalProperties: false,
+          properties: {
+            costUsd: { type: "number", exclusiveMinimum: 0 },
+            source: { type: "string", enum: ["interactive"] },
+            linuxUser: { type: "string", minLength: 1 },
+            sessionId: { type: "string", minLength: 1 },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      const body = req.body as { costUsd: number; source: "interactive"; linuxUser: string; sessionId: string };
+      const licenseRows = await db.select({ id: licenses.id, linuxUser: licenses.linuxUser }).from(licenses);
+      const licenseId = licenseIdForLinuxUser(licenseRows, body.linuxUser);
+      if (licenseId === null) throw badRequest(`no license runs as linux user '${body.linuxUser}'`);
+      const seen = interactiveDedupe.check(body.sessionId, body.costUsd);
+      if (seen.duplicate) return reply.code(200).send({ id: seen.id, duplicate: true });
+      let id: number | null;
+      try {
+        id = await recordUsageEvent({ costUsd: body.costUsd, source: body.source, licenseId });
+      } catch (err) {
+        interactiveDedupe.forget(body.sessionId, body.costUsd);
+        throw err;
+      }
+      interactiveDedupe.remember(body.sessionId, body.costUsd, id);
+      return reply.code(201).send({ id, duplicate: false });
+    },
+  );
 
   // cost per task, rolled up per project and per parent project.
   app.get("/usage/rollup", async () => getCostRollup());

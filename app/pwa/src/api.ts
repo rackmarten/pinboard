@@ -597,6 +597,9 @@ export interface UsageSummary {
   resetStart: string;
   monthUsd: number;
   daily: DailyCost[];
+  // The figures above are agent spend; this is the operator's own
+  // interactive sessions over the same ranges, never part of the budget gate.
+  interactive: { todayUsd: number; sinceResetUsd: number; monthUsd: number };
 }
 
 export function getUsageSummary(): Promise<UsageSummary> {

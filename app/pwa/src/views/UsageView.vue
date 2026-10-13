@@ -155,18 +155,21 @@ async function triggerDigest(): Promise<void> {
           <v-card-text>
             <div class="text-caption text-medium-emphasis">Today</div>
             <div class="text-h4">{{ formatUsd(summary.todayUsd) }}</div>
+            <div class="text-caption text-medium-emphasis">agents, + {{ formatUsd(summary.interactive.todayUsd) }} interactive</div>
           </v-card-text>
         </v-card>
         <v-card class="stat-tile" variant="tonal">
           <v-card-text>
             <div class="text-caption text-medium-emphasis">Since reset ({{ shortDay(summary.resetStart.slice(0, 10)) }})</div>
             <div class="text-h4">{{ formatUsd(summary.sinceResetUsd) }}</div>
+            <div class="text-caption text-medium-emphasis">agents, + {{ formatUsd(summary.interactive.sinceResetUsd) }} interactive</div>
           </v-card-text>
         </v-card>
         <v-card class="stat-tile" variant="tonal">
           <v-card-text>
             <div class="text-caption text-medium-emphasis">This month</div>
             <div class="text-h4">{{ formatUsd(summary.monthUsd) }}</div>
+            <div class="text-caption text-medium-emphasis">agents, + {{ formatUsd(summary.interactive.monthUsd) }} interactive</div>
           </v-card-text>
         </v-card>
       </div>

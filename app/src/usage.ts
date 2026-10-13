@@ -21,6 +21,70 @@ export interface UsageSummary {
   sinceResetUsd: number;
   resetStart: string; // ISO timestamp of the most recent weekly reset used above
   daily: DailyCost[];
+  // The figures above are agent spend (handoffs). The operator's own
+  // interactive sessions (POST /usage) are reported separately, over the
+  // same three ranges, so the two are never mixed into one number.
+  interactive: { todayUsd: number; sinceResetUsd: number; monthUsd: number };
+}
+
+export type UsageSource = "handoff" | "chat" | "interactive";
+
+// Spend reported by an operator's own interactive Claude Code session (POST
+// /usage) is recorded, not gated: it feeds the governor's calibration and
+// the usage view, but never the period or session spend the planner gates
+// dispatch on. The operator's own work should not starve the agents' budget,
+// and it is not something the planner could have scheduled around anyway.
+export const UNGATED_USAGE_SOURCES: readonly UsageSource[] = ["interactive"];
+
+export function countsTowardBudgetGate(source: string): boolean {
+  return !(UNGATED_USAGE_SOURCES as readonly string[]).includes(source);
+}
+
+// The governor's calibration (implied dollars per allowance percent, and the
+// cost-since-observation estimate) counts every dollar that actually drew on
+// the allowance: agent spend (the handoffs table) plus the ungated sources,
+// which only exist as usage_events rows. Chat stays out, as it always has.
+export function calibrationCostUsd(handoffUsd: number, eventUsdBySource: Record<string, number>): number {
+  return handoffUsd + UNGATED_USAGE_SOURCES.reduce((sum, source) => sum + (eventUsdBySource[source] ?? 0), 0);
+}
+
+// Interactive sessions report from a Claude Code hook, and a quick /clear can
+// fire it twice. The same (sessionId, costUsd) seen again within this window
+// is a duplicate and is not stored a second time. Kept in memory rather than
+// in a column: the window is a minute, so losing it on a restart costs at
+// most one duplicate row.
+export const INTERACTIVE_DEDUPE_MS = 60_000;
+
+export class InteractiveDedupe {
+  private seen = new Map<string, { at: number; id: number | null }>();
+
+  // A new report is remembered straight away (before the insert) so two
+  // concurrent posts cannot both pass; a duplicate gets the first one's id
+  // when its insert has finished.
+  check(sessionId: string, costUsd: number, now = Date.now()): { duplicate: boolean; id: number | null } {
+    for (const [key, entry] of this.seen) if (now - entry.at >= INTERACTIVE_DEDUPE_MS) this.seen.delete(key);
+    const key = `${sessionId}\u0000${costUsd}`;
+    const hit = this.seen.get(key);
+    if (hit) return { duplicate: true, id: hit.id };
+    this.seen.set(key, { at: now, id: null });
+    return { duplicate: false, id: null };
+  }
+
+  remember(sessionId: string, costUsd: number, id: number | null): void {
+    const entry = this.seen.get(`${sessionId}\u0000${costUsd}`);
+    if (entry) entry.id = id;
+  }
+
+  // The insert failed: let a retry through.
+  forget(sessionId: string, costUsd: number): void {
+    this.seen.delete(`${sessionId}\u0000${costUsd}`);
+  }
+}
+
+// Linux user -> license. Interactive sessions run as the operator's own
+// Linux user, which is the same user a license dispatches agents as.
+export function licenseIdForLinuxUser(rows: { id: number; linuxUser: string }[], linuxUser: string): number | null {
+  return rows.find((r) => r.linuxUser === linuxUser)?.id ?? null;
 }
 
 // Most recent occurrence of the configured day-of-week/hour at or before
@@ -49,6 +113,15 @@ async function sumCostSince(cutoff: Date): Promise<number> {
   return Number(row?.total ?? 0);
 }
 
+async function sumInteractiveSince(cutoff: Date): Promise<number> {
+  const [row] = await sql<{ total: string | null }[]>`
+    select coalesce(sum(cost_usd::numeric), 0) as total
+    from usage_events
+    where source = 'interactive' and occurred_at >= ${cutoff.toISOString()}
+  `;
+  return Number(row?.total ?? 0);
+}
+
 export async function getUsageSummary(days = 30): Promise<UsageSummary> {
   const now = new Date();
   const startOfToday = new Date(now);
@@ -61,10 +134,13 @@ export async function getUsageSummary(days = 30): Promise<UsageSummary> {
   const { dayOfWeek, hour } = await getWeeklyResetSetting();
   const resetStart = currentWeeklyResetStart(now, dayOfWeek, hour);
 
-  const [todayUsd, sinceResetUsd, monthUsd, dailyRows] = await Promise.all([
+  const [todayUsd, sinceResetUsd, monthUsd, interactiveToday, interactiveSinceReset, interactiveMonth, dailyRows] = await Promise.all([
     sumCostSince(startOfToday),
     sumCostSince(resetStart),
     sumCostSince(startOfMonth),
+    sumInteractiveSince(startOfToday),
+    sumInteractiveSince(resetStart),
+    sumInteractiveSince(startOfMonth),
     sql<{ day: string; total: string; count: string }[]>`
       select date_trunc('day', created_at)::date as day,
              coalesce(sum(cost_usd::numeric), 0) as total,
@@ -86,7 +162,14 @@ export async function getUsageSummary(days = 30): Promise<UsageSummary> {
     daily.push({ day: key, costUsd: found?.costUsd ?? 0, count: found?.count ?? 0 });
   }
 
-  return { todayUsd, sinceResetUsd, resetStart: resetStart.toISOString(), monthUsd, daily };
+  return {
+    todayUsd,
+    sinceResetUsd,
+    resetStart: resetStart.toISOString(),
+    monthUsd,
+    daily,
+    interactive: { todayUsd: interactiveToday, sinceResetUsd: interactiveSinceReset, monthUsd: interactiveMonth },
+  };
 }
 
 export interface TaskCost {
