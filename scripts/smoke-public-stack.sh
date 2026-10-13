@@ -107,7 +107,10 @@ while :; do
   task="$(api "${base}/api/tasks/${task_id}")"
   status="$(printf '%s' "$task" | json '.status')"
   comments="$(api "${base}/api/tasks/${task_id}/comments" 2>/dev/null || echo '[]')"
-  if [ "$status" != queued ] || printf '%s' "$comments" | grep -q 'Attempt 1'; then
+  # Without GH_TOKEN foreman starts the task and then stops at its gh
+  # preflight, before claiming it, so its own "started" line counts too.
+  if [ "$status" != queued ] || printf '%s' "$comments" | grep -q 'Attempt 1' ||
+    compose logs foreman 2>/dev/null | grep -q "dispatch: started #${task_id}\b"; then
     echo "foreman picked up task ${task_id} (status now: ${status})."
     break
   fi
