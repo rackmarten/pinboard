@@ -7,6 +7,11 @@ publishes the container image `ghcr.io/rackmarten/pinboard` at that version.
 
 ## [Unreleased]
 
+### Fixed
+- `scripts/smoke-public-stack.sh` created its agent with executor `claude-code`,
+  which foreman never dispatches to, so the pickup check always timed out. It
+  now uses `cli`, and the README quickstart says agents need executor `cli`.
+
 ## [0.1.0] - 2026-10-13
 
 ### Added

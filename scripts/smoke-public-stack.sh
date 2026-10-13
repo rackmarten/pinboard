@@ -91,7 +91,7 @@ compose exec -T foreman work task list >/dev/null
 
 echo "Creating an agent, a project and a queued task..."
 license_id="$(api "${base}/api/licenses" | json '[0].id')"
-api -X POST "${base}/api/agents" -d "{\"name\":\"smoke-agent\",\"role\":\"general\",\"provider\":\"anthropic\",\"model\":\"sonnet\",\"executor\":\"claude-code\",\"autonomyLevel\":3,\"licenseId\":${license_id}}" >/dev/null
+api -X POST "${base}/api/agents" -d "{\"name\":\"smoke-agent\",\"role\":\"general\",\"provider\":\"anthropic\",\"model\":\"sonnet\",\"executor\":\"cli\",\"autonomyLevel\":3,\"licenseId\":${license_id}}" >/dev/null
 # The planner runs nothing without a budget period covering now.
 ends_at="$(date -u -d '+1 day' +%Y-%m-%dT%H:%M:%SZ)"
 api -X POST "${base}/api/plan/periods" -d "{\"budgetUsd\":5,\"endsAt\":\"${ends_at}\",\"licenseId\":${license_id}}" >/dev/null
