@@ -48,3 +48,4 @@ Keep commits focused, and start the subject with one of these prefixes:
 
 By contributing, you agree that your contributions are licensed under the
 [MIT License](LICENSE).
+Thanks for contributing.
