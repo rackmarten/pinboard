@@ -1,0 +1,1 @@
+ALTER TABLE "projects" ADD COLUMN "auto_deploy_allowed" boolean DEFAULT false NOT NULL;

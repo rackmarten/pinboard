@@ -1,0 +1,4 @@
+# Leak-check exceptions: <path-glob>:<id>. Only for functional configuration,
+# never for prose.
+# A historical migration that rewrote stored paths; migrations are immutable.
+app/drizzle/0015_rename_repo_slug_and_related_repos.sql:P04

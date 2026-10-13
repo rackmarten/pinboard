@@ -1,0 +1,1 @@
+ALTER TABLE "licenses" ADD COLUMN "session_reset_at" timestamp with time zone;

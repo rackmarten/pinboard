@@ -1,0 +1,129 @@
+name: pinboard
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: pinboard-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-pinboard}
+      POSTGRES_USER: ${POSTGRES_USER:-pinboard}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      # A named volume by default. PINBOARD_SQL_DIR (a host path) overrides it,
+      # which is how the homelab LXC keeps its data in /app/sql.
+      - ${PINBOARD_SQL_DIR:-pinboard-db}:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pinboard} -d ${POSTGRES_DB:-pinboard}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  app:
+    # Published image. docker-compose.dev.yml builds it from ./app instead.
+    image: ${PINBOARD_IMAGE:-ghcr.io/rackmarten/pinboard}:${PINBOARD_TAG:-latest}
+    container_name: pinboard-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${APP_PORT:-8095}:8095"
+    # required: false so `docker compose config` (the CI syntax check)
+    # still succeeds in a checkout that has no .env.
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PORT: 8095
+      # Every integration below is optional and off when empty; the app logs
+      # one line per integration at startup. Set them in .env. On the homelab
+      # LXC, scripts/deploy.sh also sources a keyring-rendered
+      # /app/secrets/global.env, whose values win over .env's.
+      # Reverse-proxy auth for root grants - see README's "Root access".
+      PINBOARD_PROXY_SECRET: ${PINBOARD_PROXY_SECRET:-}
+      # Daily digest mail. User/pass/port come from env_file.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_TLS_SERVERNAME: ${SMTP_TLS_SERVERNAME:-}
+      # ntfy phone push.
+      NTFY_URL: ${NTFY_URL:-}
+      NTFY_TOKEN_PINBOARD: ${NTFY_TOKEN_PINBOARD:-}
+      # Quiet hours and morning digest for phone pushes.
+      PUSH_QUIET_START: ${PUSH_QUIET_START:-1}
+      PUSH_QUIET_END: ${PUSH_QUIET_END:-9}
+      PUSH_DIGEST_AT: ${PUSH_DIGEST_AT:-9}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-pinboard}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-pinboard}
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8095/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # Nightly-ish pg_dump loop (scripts/backup.sh) - not wall-clock cron, just
+  # dump-then-sleep-24h, into a local volume. Copying the dumps off the
+  # machine is left to whatever backs up the host.
+  backup:
+    image: postgres:16-alpine
+    container_name: pinboard-backup
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./scripts/backup.sh:/backup.sh:ro
+      # Named volume by default; PINBOARD_BACKUP_DIR (a host path) overrides it.
+      - ${PINBOARD_BACKUP_DIR:-pinboard-backups}:/backups
+    environment:
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER:-pinboard}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB:-pinboard}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
+      BACKUP_KEEP_MIN: ${BACKUP_KEEP_MIN:-3}
+      BACKUP_RETRY_SECONDS: ${BACKUP_RETRY_SECONDS:-900}
+    entrypoint: ["sh", "/backup.sh"]
+
+  # The foreman runner: polls pinboard for queued tasks and runs each one as
+  # a Claude Code session. Behind the "runner" profile so a pinboard-only
+  # install (COMPOSE_PROFILES unset) leaves it out; .env.example turns it on.
+  # Only `work dispatch` runs here; foreman's own docker-compose.yml has the
+  # full set (chat, pipeline, housekeeping) for a dedicated machine.
+  foreman:
+    image: ${FOREMAN_IMAGE:-ghcr.io/rackmarten/foreman}:${FOREMAN_TAG:-latest}
+    container_name: pinboard-foreman
+    profiles: ["runner"]
+    restart: unless-stopped
+    init: true
+    depends_on:
+      app:
+        condition: service_healthy
+    command: ["work", "dispatch"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PINBOARD_URL: http://app:8095
+      # Passed explicitly so they also arrive from a --env-file, not only .env.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
+      GH_TOKEN: ${GH_TOKEN:-}
+      HOME: /app/state/home
+      WORK_TASK_ROOT: /app/tasks
+      WORK_WORKSPACE_ROOT: /app/workspace
+      CLAUDE_BIN: claude
+      FOREMAN_SERVICE: dispatch
+      PUBLIC_GITHUB_ORGS: ${PUBLIC_GITHUB_ORGS:-}
+    volumes:
+      - foreman-state:/app/state
+      - foreman-tasks:/app/tasks
+      - foreman-workspace:/app/workspace
+    stop_grace_period: 2100s
+
+volumes:
+  pinboard-db:
+  pinboard-backups:
+  foreman-state:
+  foreman-tasks:
+  foreman-workspace:

@@ -1,0 +1,300 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1788873073433,
+      "tag": "0000_tearful_miek",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788891153333,
+      "tag": "0001_ambiguous_arclight",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788896123182,
+      "tag": "0002_strong_devos",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788900072803,
+      "tag": "0003_first_vance_astro",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788905304000,
+      "tag": "0004_unknown_manta",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788952897247,
+      "tag": "0005_ambiguous_lily_hollister",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788965227586,
+      "tag": "0006_last_ravenous",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788968496507,
+      "tag": "0007_violet_shinko_yamashiro",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788991808678,
+      "tag": "0008_damp_invisible_woman",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789031837074,
+      "tag": "0009_smiling_forge",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789063324228,
+      "tag": "0010_wise_la_nuit",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1789079209402,
+      "tag": "0011_woozy_black_panther",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1789100000000,
+      "tag": "0012_lively_moon_knight",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1789150187805,
+      "tag": "0013_add_project_hierarchy_and_repo_url",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1789160416012,
+      "tag": "0014_add_related_repo_slugs",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1789170434117,
+      "tag": "0015_rename_repo_slug_and_related_repos",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1789212818778,
+      "tag": "0016_tearful_nova",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1789215617654,
+      "tag": "0017_wonderful_firestar",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1789217790558,
+      "tag": "0018_crazy_scrambler",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1789244212475,
+      "tag": "0019_add_chat_thread_agent",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1789244526603,
+      "tag": "0020_add_chat_thread_model_effort",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1789251832569,
+      "tag": "0021_add_chat_thread_usage",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1789331500500,
+      "tag": "0022_add_governor_source_and_budget_rate_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1789590441095,
+      "tag": "0023_add_budget_periods_planner_settings_usage_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1789634003424,
+      "tag": "0024_add_licenses",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1789658834135,
+      "tag": "0025_add_session_limit_reports",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1789673000364,
+      "tag": "0026_add_chat_events_and_permission_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1789674412795,
+      "tag": "0027_add_pipeline_stage",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1789686997064,
+      "tag": "0028_add_task_session_license",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1789749335944,
+      "tag": "0029_add_agent_is_host",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1790063009135,
+      "tag": "0030_journal_and_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1790072003802,
+      "tag": "0031_push_subscriptions",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1790088528347,
+      "tag": "0032_releases",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1790093897664,
+      "tag": "0033_release_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1790106925347,
+      "tag": "0034_root_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1790500000000,
+      "tag": "0035_backlog_to_defined",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1790622916371,
+      "tag": "0036_keywords",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1790639414876,
+      "tag": "0037_session_reset",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1790675484570,
+      "tag": "0038_task_asks",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1790679306780,
+      "tag": "0039_license_token_env_var",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1790687037622,
+      "tag": "0040_drop_push_subscriptions",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1791523936798,
+      "tag": "0041_license_weekly_recurrence",
+      "breakpoints": true
+    }
+  ]
+}

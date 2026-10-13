@@ -1,0 +1,53 @@
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Design doc with personal budget/subscription content - see PLAN.md's
+# opening note. Never committed: this repo may eventually be open-sourced.
+/pinboard-initial-idea.md
+
+# Local configuration
+docker-compose.override.yml
+*.local
+*.local.*
+
+# Dependencies
+node_modules/
+vendor/
+
+# Build output
+dist/
+build/
+coverage/
+
+# Logs
+*.log
+logs/
+
+# Runtime data
+tmp/
+temp/
+.cache/
+
+# IDE
+.idea/
+.vscode/*
+!.vscode/settings.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Secrets and credentials
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# foreman creates an agent's git worktree at .claude/worktrees/<name> inside
+# the repo it is working on (see foreman's runner.ts worktreePath), so a plain
+# `git add -A` will otherwise commit a gitlink to a throwaway worktree - which
+# happened once, in 09c7e86.
+.claude/worktrees/

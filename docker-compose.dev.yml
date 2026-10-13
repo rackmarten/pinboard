@@ -1,0 +1,23 @@
+# Build from source instead of pulling the published images. Use it with the
+# main file:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+#
+# or set COMPOSE_FILE=docker-compose.yml:docker-compose.dev.yml in .env.
+# The foreman runner builds from a foreman checkout next to this one
+# (../foreman, or FOREMAN_SRC); it is only needed when the "runner" profile
+# is on.
+services:
+  app:
+    image: pinboard-app:local
+    build:
+      context: ./app
+      args:
+        AVATAR_BASE_URL: ${AVATAR_BASE_URL:-}
+
+  foreman:
+    image: foreman-runner:local
+    build:
+      context: ${FOREMAN_SRC:-../foreman}
+      args:
+        DOCKER_GID: ${DOCKER_GID:-991}

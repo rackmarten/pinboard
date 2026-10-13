@@ -1,0 +1,1 @@
+ALTER TABLE "licenses" ADD COLUMN "token_env_var" text;
