@@ -695,9 +695,12 @@ export const appSettings = pgTable("app_settings", {
   // $/effort-point rate.
   // concurrencyGlobal: how many agent tasks may execute at once, overriding
   // config.governor.concurrency.global.
+  // useEffortScaling: whether a task's effort scales its cost estimate (see
+  // cost-model.ts). Null means never set, which counts as on.
   sessionBudgetUsd: text("session_budget_usd"),
   defaultTaskCostUsd: text("default_task_cost_usd"),
   concurrencyGlobal: integer("concurrency_global"),
+  useEffortScaling: boolean("use_effort_scaling"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

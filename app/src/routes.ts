@@ -48,6 +48,7 @@ import {
   getWeeklyResetSetting,
   updatePlannerSettings,
   updateWeeklyResetSetting,
+  validateBoolean,
   validateDayOfWeek,
   validateHour,
   validatePositiveInteger,
@@ -2266,8 +2267,13 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.get("/settings/planner", async () => getPlannerSettings());
 
   app.put("/settings/planner", async (req) => {
-    const body = req.body as { sessionBudgetUsd?: unknown; defaultTaskCostUsd?: unknown; concurrencyGlobal?: unknown };
-    const patch: { sessionBudgetUsd?: number; defaultTaskCostUsd?: number; concurrencyGlobal?: number } = {};
+    const body = req.body as {
+      sessionBudgetUsd?: unknown;
+      defaultTaskCostUsd?: unknown;
+      concurrencyGlobal?: unknown;
+      useEffortScaling?: unknown;
+    };
+    const patch: { sessionBudgetUsd?: number; defaultTaskCostUsd?: number; concurrencyGlobal?: number; useEffortScaling?: boolean } = {};
     try {
       if (body.sessionBudgetUsd !== undefined) {
         patch.sessionBudgetUsd = validatePositiveNumber(body.sessionBudgetUsd, "sessionBudgetUsd");
@@ -2277,6 +2283,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       }
       if (body.concurrencyGlobal !== undefined) {
         patch.concurrencyGlobal = validatePositiveInteger(body.concurrencyGlobal, "concurrencyGlobal");
+      }
+      if (body.useEffortScaling !== undefined) {
+        patch.useEffortScaling = validateBoolean(body.useEffortScaling, "useEffortScaling");
       }
     } catch (err) {
       throw badRequest(err instanceof Error ? err.message : String(err));

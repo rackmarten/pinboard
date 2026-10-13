@@ -1,0 +1,1 @@
+ALTER TABLE "app_settings" ADD COLUMN "use_effort_scaling" boolean;

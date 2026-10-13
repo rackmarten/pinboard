@@ -55,6 +55,20 @@ export interface PlannerSettings {
   defaultTaskCostUsd: number;
   // How many agent tasks may execute at once.
   concurrencyGlobal: number;
+  // Scale a task's estimate by its effort (cost-model.ts). On by default; an
+  // operator switch rather than a deploy if effort stops predicting cost.
+  useEffortScaling: boolean;
+}
+
+export const DEFAULT_USE_EFFORT_SCALING = true;
+
+export function resolveUseEffortScaling(stored: boolean | null | undefined): boolean {
+  return stored ?? DEFAULT_USE_EFFORT_SCALING;
+}
+
+export function validateBoolean(value: unknown, field: string): boolean {
+  if (typeof value !== "boolean") throw new Error(`${field} must be true or false`);
+  return value;
 }
 
 export function validatePositiveNumber(value: unknown, field: string): number {
@@ -75,17 +89,19 @@ export async function getPlannerSettings(): Promise<PlannerSettings> {
     sessionBudgetUsd: row?.sessionBudgetUsd ? Number(row.sessionBudgetUsd) : config.governor.sessionBudgetUsd,
     defaultTaskCostUsd: row?.defaultTaskCostUsd ? Number(row.defaultTaskCostUsd) : config.governor.defaultTaskCostUsd,
     concurrencyGlobal: row?.concurrencyGlobal ?? config.governor.concurrency.global,
+    useEffortScaling: resolveUseEffortScaling(row?.useEffortScaling),
   };
 }
 
 export async function updatePlannerSettings(patch: Partial<PlannerSettings>): Promise<PlannerSettings> {
   // Only the fields actually present in the patch are written, so updating
-  // one setting never silently resets the other two back to their config
+  // one setting never silently resets the others back to their config
   // defaults.
   const set = {
     ...(patch.sessionBudgetUsd !== undefined ? { sessionBudgetUsd: String(patch.sessionBudgetUsd) } : {}),
     ...(patch.defaultTaskCostUsd !== undefined ? { defaultTaskCostUsd: String(patch.defaultTaskCostUsd) } : {}),
     ...(patch.concurrencyGlobal !== undefined ? { concurrencyGlobal: patch.concurrencyGlobal } : {}),
+    ...(patch.useEffortScaling !== undefined ? { useEffortScaling: patch.useEffortScaling } : {}),
     updatedAt: new Date(),
   };
   await db

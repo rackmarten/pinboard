@@ -198,12 +198,24 @@ the root. Old root API calls are no longer aliased.
 | `GET /plan/periods?limit=&licenseId=` / `POST /plan/periods` | List (optionally filtered by license) / create budget periods - body `{budgetUsd, endsAt, licenseId?, startsAt?, note?}`. `licenseId` defaults to the `default` license on create; a period's license can't be changed after creation |
 | `GET /plan/periods/current?licenseId=` | The period containing now for one license, 404 if none does. `licenseId` defaults to the `default` license |
 | `PATCH /plan/periods/:id` | Update a period's budget, dates or note |
-| `GET /settings/planner` / `PUT /settings/planner` | Session window budget, cold-start task cost and the global concurrency limit. Unset fields fall back to the `GOVERNOR_*` env defaults |
+| `GET /settings/planner` / `PUT /settings/planner` | Session window budget, cold-start task cost, the global concurrency limit and `useEffortScaling` (default `true`). Unset fields fall back to the `GOVERNOR_*` env defaults |
 | `POST /tasks/:id/labels` / `DELETE /tasks/:id/labels/:labelId` | Assign / remove a label |
 
 `estimatedEffort` is constrained to `1, 2, 3, 5, 8, 13` (a story-point-like
 AI effort scale, not engineering time) - the I0 spike found an
 unconstrained integer let the model invent a value of `1000`.
+
+**Cost estimates.** The planner estimates each queued task's cost from
+completed tasks with a recorded cost (`app/src/cost-model.ts`). Cost rises
+with effort, so with `useEffortScaling` on (the default) a task with an
+effort gets the mean cost of completed tasks at that effort level, once that
+level has 5 or more samples, and otherwise a least-squares
+intercept + slope line over every task with an effort. A task with no effort,
+or any task with scaling off, gets its project's mean (3+ samples), then the
+global mean, then the configured cold-start cost. `GET /plan`'s `costModel`
+reports `useEffortScaling`, the line and the per-effort means. Turn scaling
+off with `PUT /settings/planner {"useEffortScaling": false}`, no deploy
+needed.
 
 A past task: the **post-PR pipeline**. Everything
 between an agent opening a PR and a human looking at the result - poll CI,
