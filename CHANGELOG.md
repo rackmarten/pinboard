@@ -7,6 +7,15 @@ publishes the container image `ghcr.io/rackmarten/pinboard` at that version.
 
 ## [Unreleased]
 
+### Changed
+- Cost estimates now scale with a task's effort, on by default. A task with
+  an effort is estimated at the mean cost of completed tasks at that effort
+  level (5+ samples), else from an intercept + slope line fitted over all
+  tasks with an effort. Tasks with no effort keep the project or global
+  mean. `useEffortScaling` in `PUT /settings/planner` switches it off without
+  a deploy, and `GET /plan`'s `costModel` reports the line and per-effort
+  means.
+
 ### Fixed
 - `scripts/smoke-public-stack.sh` created its agent with executor `claude-code`,
   which foreman never dispatches to, so the pickup check always timed out. It

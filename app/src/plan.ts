@@ -685,6 +685,9 @@ export interface PlanResult {
   costModel: {
     globalMeanUsd: number | null;
     usdPerEffortPoint: number | null;
+    effortLine: { interceptUsd: number; slopeUsd: number } | null;
+    // Per-effort-level mean cost, for levels with enough samples to be used.
+    effortMeans: Array<{ effort: number; meanUsd: number }>;
     meanDurationMs: number | null;
     sampleCount: number;
     useEffortScaling: boolean;
@@ -836,7 +839,7 @@ export async function getPlan(licenseId: number, now = new Date(), override = fa
 
   const model: CostModel = buildCostModel(history, {
     defaultTaskCostUsd: settings.defaultTaskCostUsd,
-    useEffortScaling: false,
+    useEffortScaling: settings.useEffortScaling,
   });
   const estimate = (task: RunnableTask) => estimateTaskCost(task, model);
 
@@ -941,6 +944,8 @@ export async function getPlan(licenseId: number, now = new Date(), override = fa
     costModel: {
       globalMeanUsd: model.globalMeanUsd,
       usdPerEffortPoint: model.usdPerEffortPoint,
+      effortLine: model.effortLine,
+      effortMeans: [...model.effortBucketMeanUsd].sort(([a], [b]) => a - b).map(([effort, meanUsd]) => ({ effort, meanUsd })),
       meanDurationMs: model.meanDurationMs,
       sampleCount: model.sampleCount,
       useEffortScaling: model.useEffortScaling,
@@ -1006,7 +1011,7 @@ export async function getPlanGate(taskId: number, licenseId: number, now = new D
   const inputs = await loadPlannerInputs(licenseId, now);
   const { settings, licenseSettings, period, spentUsd, events, reportedResetAt, blocked, humanHeldIds, executingLicenseIds, queued, executing, history } = inputs;
 
-  const model = buildCostModel(history, { defaultTaskCostUsd: settings.defaultTaskCostUsd, useEffortScaling: false });
+  const model = buildCostModel(history, { defaultTaskCostUsd: settings.defaultTaskCostUsd, useEffortScaling: settings.useEffortScaling });
 
   const candidate = [...queued, ...executing].find((t) => t.id === taskId);
   if (!candidate) {
