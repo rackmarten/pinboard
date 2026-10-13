@@ -22,8 +22,12 @@ Postgres. See README.md for what it does and how it is installed.
 - Schema changes go through `npm run db:generate` (a new Drizzle migration),
   never a hand-edited existing migration.
 - Commit subjects start with `Add:`, `Edit:`, `Fix:`, `Update:`, `Remove:`,
-  `Docs:` or `DevOps:` (see CONTRIBUTING.md). Record what shipped in
-  CHANGELOG.md under a dated heading.
+  `Docs:` or `DevOps:` (see CONTRIBUTING.md). Record every user-visible
+  change under `## [Unreleased]` in CHANGELOG.md (Keep a Changelog, semver).
+- Releases are cut by the maintainer on request, never as part of an ordinary
+  change: bump `version` in `app/package.json` and
+  `app/pwa/package.json`, move `[Unreleased]` to `## [x.y.z] - <date>` and
+  update the compare links, merge, then tag `vx.y.z` on that commit. The tag builds and publishes the container image.
 - This repository is public: no private host names, addresses, internal
   ticket numbers or personal details in code, comments, docs or commit
   messages. CI runs a leak check (`.github/scripts/leak-check.sh`).
