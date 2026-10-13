@@ -1,11 +1,13 @@
 # Changelog
 
-Notable changes to `pinboard`. Format loosely follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) (Added/Changed/
-Fixed/Removed), grouped by date rather than version: `main` deploys on every
-push, and tagged versions only mark published container images.
+All notable changes to `pinboard` are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html). Each `v*` tag
+publishes the container image `ghcr.io/rackmarten/pinboard` at that version.
 
-## 2026-10-13
+## [Unreleased]
+
+## [0.1.0] - 2026-10-13
 
 ### Added
 - First public release. Projects, tasks (stories, increments, `depends_on`
@@ -14,3 +16,6 @@ push, and tagged versions only mark published container images.
   it. One `docker compose up -d` with only a database password brings the
   stack up; mail, push notifications and other integrations stay off until
   configured.
+
+[Unreleased]: https://github.com/rackmarten/pinboard/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/rackmarten/pinboard/releases/tag/v0.1.0
