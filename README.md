@@ -1,5 +1,6 @@
 # pinboard
 
+[![Sponsor on GitHub](https://img.shields.io/badge/GitHub-sponsor-EA4AAA?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/uncikmarek)
 [![Support on Ko-fi](https://img.shields.io/badge/Ko--fi-support-FF5E5B?logo=kofi&logoColor=white)](https://ko-fi.com/rackmarten)
 
 A work database with a human UI, and the front half of a pair:
@@ -406,6 +407,8 @@ notes if a future bump needs a closer look.
 ## Support this project
 
 If pinboard saves you time, you can support its development on
+[GitHub Sponsors](https://github.com/sponsors/uncikmarek) or
 [Ko-fi](https://ko-fi.com/rackmarten):
 
+[![Sponsor on GitHub](https://img.shields.io/badge/GitHub-sponsor-EA4AAA?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/uncikmarek)
 [![Support on Ko-fi](https://img.shields.io/badge/Ko--fi-support-FF5E5B?logo=kofi&logoColor=white)](https://ko-fi.com/rackmarten)
