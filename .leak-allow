@@ -2,3 +2,5 @@
 # never for prose.
 # A historical migration that rewrote stored paths; migrations are immutable.
 app/drizzle/0015_rename_repo_slug_and_related_repos.sql:P04
+# A test fixture for the ask-chat export's heading, which names its task.
+app/pwa/src/ask-chat.test.ts:P26
