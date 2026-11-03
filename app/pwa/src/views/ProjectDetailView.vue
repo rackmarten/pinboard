@@ -96,6 +96,7 @@ watch(projectId, load);
         <v-chip size="small" variant="tonal">{{ project.slug }}</v-chip>
         <v-chip v-if="project.archived" size="small" variant="tonal" color="grey">archived</v-chip>
         <v-chip v-if="project.autoDeployAllowed" size="small" variant="tonal" color="success">auto-deploy</v-chip>
+        <v-chip v-if="project.reviewMode === 'playtest'" size="small" variant="tonal" color="info">playtest review</v-chip>
         <v-btn variant="tonal" prepend-icon="mdi-pencil" @click="showEdit = true">Edit</v-btn>
       </div>
 

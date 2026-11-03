@@ -143,11 +143,11 @@ the root. Old root API calls are no longer aliased.
 | --- | --- |
 | `GET /health` | Liveness + DB check |
 | `GET /projects` / `POST /projects` | List / create projects (`localPath` is the local checkout's path relative to `work`'s workspace root, e.g. `my-org/my-repo`; used by `work plan sync`) |
-| `GET /projects/:id` / `PATCH /projects/:id` | Read / update a project |
+| `GET /projects/:id` / `PATCH /projects/:id` | Read / update a project. `reviewMode` is `standard` or `playtest` (400 otherwise) |
 | `GET /projects/:id/handoffs?limit=` | Latest handoffs for a project, most recent first - powers `work plan sync` |
 | `GET /tasks?projectId=&status=&taskType=&executorMode=&parentTaskId=` | Filtered task list. Each row carries `parentTaskId` (from `parent`/`child` relations, `null` if none); `parentTaskId=` lists that task's children |
 | `POST /tasks` | Create a task. `status`/`taskType`/`executorMode` must be known values (list in `app/src/task-model.ts`) or it's a 400; `status: "backlog"` is accepted as an alias of `defined`. Same rules on `PATCH /tasks/:id` |
-| `GET /tasks/:id` | Task detail, including its labels |
+| `GET /tasks/:id` | Task detail, including its labels, open asks and `stackOn` (see "Playtest review") |
 | `PATCH /tasks/:id` | Update a task. When a child of a `story` task reaches `done`/`rejected` (here, via `/complete` or the pipeline) and all its siblings are too, the story moves to `done` with a `status` event from `system`/`pinboard`. A `story` is never ranked runnable by `/plan` |
 | `GET /tasks/:id/comments` / `POST /tasks/:id/comments` | Task discussion thread |
 | `GET /tasks/:id/root-grant` | Root grant state: `{ active, ctids, expiresAt, grantedAt, grantedBy }`. What a root proxy asks before every call |
@@ -251,7 +251,10 @@ A past task adds three guards:
   `PATCH status=done` return 409 while such a row exists unless the body has
   `force: true` (the review queue's "Mark done without merging").
   `PATCH /tasks/:id/pull-requests/:prId` accepts `state` `open|merged|closed`
-  so foreman can sync PR state; pinboard itself never calls GitHub.
+  so foreman can sync PR state; pinboard itself never calls GitHub. Both PR
+  routes also take `baseBranch`, `stackedOnTaskId` and `stackedOnSha` (see
+  "Playtest review" below); a PATCH with only those and no `state` leaves the
+  state alone.
 - **`needs_input` status.** An agent parked on an unanswered question:
   `queued`/`executing`/`handoff -> needs_input` via `POST /tasks/:id/pipeline`, and
   back out to `queued` (operator answered, no `repairReason`, not an
@@ -275,8 +278,34 @@ for the releases history and notifications, parent story closed if this was
 its last open child). The same story relaxed the `depends_on` gate: a target
 in `review` with at least one PR and every PR `merged` satisfies it (its
 change is already on main, only a human sign-off is left), both in
-`plan.ts`'s `blockedTaskIds()` and in the PWA's "blocked by" hints (via the
-relations endpoint's `otherTask.dependencySatisfied`).
+`app/src/dependencies.ts`'s `blockedTaskIds()` and in the PWA's "blocked
+by" hints (via the relations endpoint's `otherTask.dependencySatisfied`).
+
+### Playtest review
+
+A project's `reviewMode` is `standard` (the default) or `playtest`, set in
+the project form ("Playtest review") or with `PATCH /projects/:id`. Playtest
+is for projects where review means playing a build, so a task waiting in
+`review` shouldn't hold back the work that builds on it:
+
+- **Stacking.** A task whose `depends_on` targets are all satisfied except
+  one, and that one is in `review` with an open PR, is runnable. `GET
+  /tasks/:id` returns `stackOn: { taskId, pullRequests: [{ url, repoSlug,
+  branchName }] }` for it (otherwise `null`), and foreman cuts its branch
+  from that PR's branch and opens its PR against it. Two or more unmerged
+  targets still block, as in a standard project. The rule is
+  `dependencyGate()` in `app/src/task-model.ts`; the planner, `stackOn` and
+  the approve guard all go through `app/src/dependencies.ts`.
+- **Approve order.** Moving a task from `review` or `awaiting_review` to
+  `awaiting_merge` returns 409 `merge #<id> first` while one of its
+  dependencies is unmerged, since a stacked PR contains its parent's branch.
+  The review queue shows that message.
+- **Rejecting a parent.** When a task moves to `rejected`, each dependent
+  with an open PR, or still executing, gets the comment "Parent #<id> was
+  rejected. Rebuild this on main without it.", and those in `review` or
+  `awaiting_review` move to `rework`. A dependent that hasn't started now runs
+  off main. Sending a parent back to `rework` from the review queue doesn't
+  touch its dependents; foreman restacks them once the parent's branch moves.
 
 Nothing drives any of this yet - foreman's poller is #154's increment 2, and
 the handbacks that resume an agent are increment 3. Until then this pinboard

@@ -102,8 +102,53 @@ export function isTerminalStatus(status: string): boolean {
 // whether a depends_on target no longer holds its dependent back.
 // done/rejected always satisfy; so does a task parked in `review` whose PRs
 // are all merged (at least one), since its change is already on main and only
-// the human sign-off is left. plan.ts's blockedTaskIds() is the SQL twin.
+// the human sign-off is left. dependencyGate() below builds on it.
 export function dependencySatisfied(status: string, prStates: readonly string[]): boolean {
   if (TERMINAL.has(status)) return true;
   return status === "review" && prStates.length > 0 && prStates.every((s) => s === "merged");
+}
+
+// how a project's review step works. `standard` is review as a code review:
+// a dependent waits until its target's change is on main. `playtest` is for
+// projects (games) whose review is playing a build: a dependent may start on
+// top of one target that is still in review with an open PR, and foreman
+// stacks its branch on that PR's branch (see dependencyGate).
+export const REVIEW_MODES = ["standard", "playtest"] as const;
+export type ReviewMode = (typeof REVIEW_MODES)[number];
+
+export function isReviewMode(value: unknown): value is ReviewMode {
+  return typeof value === "string" && (REVIEW_MODES as readonly string[]).includes(value);
+}
+
+export interface DependencyTarget {
+  taskId: number;
+  status: string;
+  prStates: readonly string[];
+}
+
+// a target a playtest dependent can be stacked on: waiting in review with an
+// open PR whose branch the dependent can be cut from.
+function stackable(target: DependencyTarget): boolean {
+  return target.status === "review" && target.prStates.includes("open");
+}
+
+export type DependencyGate = { blocked: true } | { blocked: false; stackOnTaskId: number | null };
+
+// whether a task's depends_on targets let it run, and in a playtest project
+// which target (if any) its branch has to be stacked on. At most one
+// unmerged target: two would mean merging one parent's branch into a PR
+// based on the other's, so a task with two waits as it always has.
+// plan.ts's blockedTaskIds() and the task route's stackOn both use this.
+export function dependencyGate(mode: ReviewMode, targets: readonly DependencyTarget[]): DependencyGate {
+  const open = targets.filter((t) => !dependencySatisfied(t.status, t.prStates));
+  if (open.length === 0) return { blocked: false, stackOnTaskId: null };
+  if (mode === "playtest" && open.length === 1 && stackable(open[0])) return { blocked: false, stackOnTaskId: open[0].taskId };
+  return { blocked: true };
+}
+
+// task ids among a dependent's `targets` that still have to merge before its
+// own PR may: in a playtest project a stacked PR is based on its parent's
+// branch, so merging it first would land the parent's unreviewed work too.
+export function unmergedDependencies(targets: readonly DependencyTarget[]): number[] {
+  return targets.filter((t) => !dependencySatisfied(t.status, t.prStates)).map((t) => t.taskId);
 }

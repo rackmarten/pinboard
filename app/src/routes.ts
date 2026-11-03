@@ -24,7 +24,8 @@ import {
   licenses,
 } from "./db/schema.js";
 import { getCostRollup, getUsageSummary, InteractiveDedupe, licenseIdForLinuxUser, runDailyDigest } from "./usage.js";
-import { normalizeTaskEnums, parentMap, storyShouldComplete, isTerminalStatus, dependencySatisfied } from "./task-model.js";
+import { normalizeTaskEnums, parentMap, storyShouldComplete, isTerminalStatus, dependencySatisfied, isReviewMode, REVIEW_MODES } from "./task-model.js";
+import { mergeBlockers, reworkStackedDependents, stackOnFor } from "./dependencies.js";
 import { readinessApplies, readinessFailures, toWorkspaceRepos, type ReadinessTask, type WorkspaceRepo } from "./readiness.js";
 import { listJournal, recordEvent as recordJournalEvent, unreadNotificationCount } from "./journal.js";
 import { pushConfigured, sendTestPush } from "./push.js";
@@ -171,6 +172,31 @@ function validatePrState(value: unknown): string {
     throw badRequest(`state must be one of ${PR_STATES.join(", ")}`);
   }
   return value as string;
+}
+
+function validateReviewMode(value: unknown): string {
+  if (!isReviewMode(value)) throw badRequest(`reviewMode must be one of ${REVIEW_MODES.join(", ")}`);
+  return value;
+}
+
+// the stacking fields foreman reports with a PR (all optional, each nullable).
+type PrStackFields = { baseBranch?: string | null; stackedOnTaskId?: number | null; stackedOnSha?: string | null };
+
+function prStackFields(body: Record<string, unknown>): PrStackFields {
+  const out: PrStackFields = {};
+  if ("baseBranch" in body) {
+    if (body.baseBranch !== null && typeof body.baseBranch !== "string") throw badRequest("baseBranch must be a string or null");
+    out.baseBranch = body.baseBranch;
+  }
+  if ("stackedOnTaskId" in body) {
+    if (body.stackedOnTaskId !== null && !Number.isInteger(body.stackedOnTaskId)) throw badRequest("stackedOnTaskId must be an integer or null");
+    out.stackedOnTaskId = body.stackedOnTaskId as number | null;
+  }
+  if ("stackedOnSha" in body) {
+    if (body.stackedOnSha !== null && typeof body.stackedOnSha !== "string") throw badRequest("stackedOnSha must be a string or null");
+    out.stackedOnSha = body.stackedOnSha;
+  }
+  return out;
 }
 
 // parent task id for each of `taskIds`, from task_relations'
@@ -469,10 +495,12 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       repoUrl?: string;
       parentProjectId?: number | null;
       autoDeployAllowed?: boolean;
+      reviewMode?: string;
       context?: string;
       relatedProjectIds?: number[];
     };
     if (!body.slug || !body.name) throw badRequest("slug and name are required");
+    const reviewMode = body.reviewMode === undefined ? "standard" : validateReviewMode(body.reviewMode);
     if (body.parentProjectId != null) await assertNoProjectCycle(body.parentProjectId);
     await assertProjectIdsExist(body.relatedProjectIds ?? []);
     const [project] = await db
@@ -486,6 +514,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         repoUrl: body.repoUrl,
         parentProjectId: body.parentProjectId ?? null,
         autoDeployAllowed: body.autoDeployAllowed ?? false,
+        reviewMode,
         context: body.context,
         relatedProjectIds: body.relatedProjectIds ?? [],
       })
@@ -552,10 +581,12 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       repoUrl?: string;
       parentProjectId?: number | null;
       autoDeployAllowed?: boolean;
+      reviewMode?: string;
       archived?: boolean;
       context?: string;
       relatedProjectIds?: number[];
     };
+    if ("reviewMode" in body) validateReviewMode(body.reviewMode);
     if (body.parentProjectId != null) await assertNoProjectCycle(body.parentProjectId, id);
     if (body.relatedProjectIds) await assertProjectIdsExist(body.relatedProjectIds);
     const actor = actorFromRequest(req);
@@ -688,8 +719,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       .where(eq(taskLabels.taskId, id));
 
     // open and recent asks, so the runner can put the Q&A into
-    // the next attempt's prompt.
-    return { ...task, labels: taskLabelRows, asks: await asksForTask(id) };
+    // the next attempt's prompt. stackOn: in a playtest project, the
+    // dependency whose PR branch foreman cuts this task's branch from.
+    return { ...task, labels: taskLabelRows, asks: await asksForTask(id), stackOn: await stackOnFor(id) };
   });
 
   app.patch("/tasks/:id", async (req, reply) => {
@@ -772,6 +804,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         ...(reason ? { reason } : {}),
       });
       await completeStoryIfFinished(id, task.status);
+      if (task.status === "rejected") await reworkStackedDependents(id, actor);
     }
     const changed = JOURNALED_TASK_FIELDS.filter(
       (f) => f in body && before && JSON.stringify((before as Record<string, unknown>)[f]) !== JSON.stringify((task as Record<string, unknown>)[f]),
@@ -811,6 +844,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const id = Number((req.params as { id: string }).id);
     const body = req.body as { url?: string; repoSlug?: string; branchName?: string; attemptNumber?: number };
     if (!body.url || !body.repoSlug) throw badRequest("url and repoSlug are required");
+    const stack = prStackFields(body as Record<string, unknown>);
     const [pr] = await db
       .insert(pullRequests)
       .values({
@@ -819,6 +853,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         repoSlug: body.repoSlug,
         branchName: body.branchName,
         attemptNumber: body.attemptNumber,
+        ...stack,
       })
       .returning();
     reply.code(201);
@@ -827,11 +862,15 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch("/tasks/:id/pull-requests/:prId", async (req, reply) => {
     const prId = Number((req.params as { prId: string }).prId);
-    const body = req.body as { state?: string };
-    const state = validatePrState(body.state);
+    const body = req.body as Record<string, unknown>;
+    // state stays required unless the call only restacks (foreman moving a
+    // stacked PR's recorded base after its parent merged or moved).
+    const stack = prStackFields(body);
+    const restackOnly = !("state" in body) && Object.keys(stack).length > 0;
+    const state = restackOnly ? undefined : validatePrState(body.state);
     const [pr] = await db
       .update(pullRequests)
-      .set({ state, updatedAt: new Date() })
+      .set({ ...(state ? { state } : {}), ...stack, updatedAt: new Date() })
       .where(eq(pullRequests.id, prId))
       .returning();
     if (!pr) return reply.code(404).send({ error: "not found" });
@@ -1081,6 +1120,12 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
     const check = checkTransition(existing.status, requested, body.repairReason, existing.executorMode);
     if (!check.ok) return reply.code(409).send({ error: check.reason });
+    // a human approving a stacked playtest PR: its parent's branch is in it,
+    // so the parent merges first (the PR then retargets to main).
+    if (requested === "awaiting_merge" && (existing.status === "review" || existing.status === "awaiting_review")) {
+      const blockers = await mergeBlockers(id);
+      if (blockers.length) return reply.code(409).send({ error: `merge ${blockers.map((b) => `#${b}`).join(", ")} first`, blockers });
+    }
 
     // a handback to `queued` is a move into the queue like any
     // other, so a `root-access` task whose grant has ended parks in `rework`
@@ -1110,6 +1155,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     // the "Done" notification.
     if (to === "done") await recordEvent(id, "complete", actorType, actorName, { via: "pipeline" });
     await completeStoryIfFinished(id, to);
+    if (to === "rejected") await reworkStackedDependents(id, { actorType, actorName });
 
     const [task] = await db.select().from(tasks).where(eq(tasks.id, id));
     return task;

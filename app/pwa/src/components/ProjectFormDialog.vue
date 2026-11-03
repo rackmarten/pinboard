@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { useBackClose } from "@rackmarten/ui-kit";
-import { createProject, updateProject, type Project } from "../api.js";
+import { createProject, updateProject, type Project, type ReviewMode } from "../api.js";
 import DescriptionEditor from "./DescriptionEditor.vue";
 
 const props = defineProps<{
@@ -29,6 +29,7 @@ const localPath = ref("");
 const repoUrl = ref("");
 const parentProjectId = ref<number | null>(null);
 const autoDeployAllowed = ref(false);
+const reviewMode = ref<ReviewMode>("standard");
 const context = ref("");
 const relatedProjectIds = ref<number[]>([]);
 const saving = ref(false);
@@ -54,6 +55,7 @@ function reset(): void {
   repoUrl.value = p?.repoUrl ?? "";
   parentProjectId.value = p?.parentProjectId ?? null;
   autoDeployAllowed.value = p?.autoDeployAllowed ?? false;
+  reviewMode.value = p?.reviewMode ?? "standard";
   context.value = p?.context ?? "";
   relatedProjectIds.value = p?.relatedProjectIds ?? [];
   error.value = null;
@@ -78,6 +80,7 @@ async function save(): Promise<void> {
     repoUrl: repoUrl.value.trim() || undefined,
     parentProjectId: parentProjectId.value,
     autoDeployAllowed: autoDeployAllowed.value,
+    reviewMode: reviewMode.value,
     context: context.value || undefined,
     relatedProjectIds: relatedProjectIds.value,
   };
@@ -162,6 +165,16 @@ async function save(): Promise<void> {
           hide-details="auto"
           hint="Let a green-CI PR from an agent be merged and deployed automatically, no human review. Never applies to the production project regardless of this flag."
           persistent-hint
+        />
+        <v-switch
+          :model-value="reviewMode === 'playtest'"
+          label="Playtest review"
+          color="primary"
+          density="comfortable"
+          hide-details="auto"
+          hint="Review here means playing a build. A task may start stacked on one dependency that is still in review, and a stacked PR can only be approved after its parent merges."
+          persistent-hint
+          @update:model-value="reviewMode = $event ? 'playtest' : 'standard'"
         />
         <v-alert v-if="error" type="error" density="compact" variant="tonal">{{ error }}</v-alert>
       </v-card-text>

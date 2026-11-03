@@ -89,6 +89,8 @@ export interface Project {
   repoUrl: string | null;
   parentProjectId: number | null;
   autoDeployAllowed: boolean;
+  // see app/src/task-model.ts's REVIEW_MODES.
+  reviewMode: ReviewMode;
   archived: boolean;
   context: string | null;
   relatedProjectIds: number[];
@@ -241,9 +243,12 @@ export interface ProjectInput {
   repoUrl?: string;
   parentProjectId?: number | null;
   autoDeployAllowed?: boolean;
+  reviewMode?: ReviewMode;
   context?: string;
   relatedProjectIds?: number[];
 }
+
+export type ReviewMode = "standard" | "playtest";
 
 export function createProject(input: ProjectInput): Promise<Project> {
   return api("/projects", { method: "POST", body: JSON.stringify(input) });

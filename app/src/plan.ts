@@ -30,6 +30,7 @@ import {
 import { getDefaultLicenseId, getLicense, getLicenseSettings } from "./licenses.js";
 import { getPlannerSettings, type PlannerSettings } from "./settings.js";
 import { ROOT_LABEL } from "./root-grants.js";
+import { blockedTaskIds } from "./dependencies.js";
 import { countsTowardBudgetGate, UNGATED_USAGE_SOURCES, type UsageSource } from "./usage.js";
 import { describeRecurrence, dbRecurrenceStore, ensureRecurringPeriod } from "./recurrence.js";
 import {
@@ -640,27 +641,6 @@ export async function liveSessionLimitReset(licenseId: number, now: Date, ignore
     .orderBy(desc(sessionLimitReports.reportedAt))
     .limit(1);
   return row ? (row.resetsAt as unknown as Date) : null;
-}
-
-// Tasks with an unfinished `depends_on` - the same gate foreman applies, but
-// resolved for the whole queue in one query instead of one round trip per
-// task the way its runner does it. a target in `review` with
-// every PR merged counts as finished (task-model.ts's dependencySatisfied()
-// is the same rule in TS).
-async function blockedTaskIds(): Promise<Set<number>> {
-  const rows = await sql<{ from_task_id: number }[]>`
-    select distinct r.from_task_id
-    from task_relations r
-    join tasks t on t.id = r.to_task_id
-    where r.relation_type = 'depends_on'
-      and t.status not in ('done', 'rejected')
-      and not (
-        t.status = 'review'
-        and exists (select 1 from pull_requests p where p.task_id = t.id)
-        and not exists (select 1 from pull_requests p where p.task_id = t.id and p.state <> 'merged')
-      )
-  `;
-  return new Set(rows.map((r) => r.from_task_id));
 }
 
 export interface PlanResult {

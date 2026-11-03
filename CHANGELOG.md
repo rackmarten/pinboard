@@ -8,6 +8,15 @@ publishes the container image `ghcr.io/rackmarten/pinboard` at that version.
 ## [Unreleased]
 
 ### Added
+- Playtest review mode, a per-project `reviewMode` (`standard` by default,
+  or `playtest`) for projects whose review means playing a build. In a
+  playtest project a task can start while its one unmerged dependency is
+  still in review with an open PR. `GET /tasks/:id` then returns that
+  dependency as `stackOn`, with its open PRs, so foreman can stack the
+  task's branch on the PR branch. A stacked PR can't be approved until its
+  parent has merged (409 `merge #<id> first`), and rejecting a parent sends
+  its stacked dependents back to rework with a comment. PR rows record
+  `baseBranch`, `stackedOnTaskId` and `stackedOnSha` for restacking.
 - `POST /api/usage` records spend reported by an interactive Claude Code
   session (`{costUsd, source: "interactive", linuxUser, sessionId}`), with the
   license resolved from its Linux user. A repeat of the same session and cost

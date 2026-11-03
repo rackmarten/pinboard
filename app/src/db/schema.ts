@@ -72,6 +72,10 @@ export const projects = pgTable("projects", {
   // autonomous deploy rights when someone deliberately turns it on.
   // "production" is never eligible regardless of this flag - see runner.ts.
   autoDeployAllowed: boolean("auto_deploy_allowed").notNull().default(false),
+  // how review works here, `standard` or `playtest` (task-model.ts's
+  // REVIEW_MODES). In a playtest project a task may start stacked on one
+  // dependency that is still in review - see dependencyGate().
+  reviewMode: text("review_mode").notNull().default("standard"),
   // I10: soft-archive instead of delete - an archived project keeps its
   // tasks/history but drops out of the default project list/picker.
   archived: boolean("archived").notNull().default(false),
@@ -664,6 +668,12 @@ export const pullRequests = pgTable("pull_requests", {
   repoSlug: text("repo_slug").notNull(),
   branchName: text("branch_name"),
   state: text("state").notNull().default("open"), // open | merged | closed
+  // the branch the PR targets, and for a stacked PR (playtest projects) the
+  // dependency it was cut from and that branch's head sha at the time, which
+  // foreman needs to restack it once the parent merges or moves.
+  baseBranch: text("base_branch"),
+  stackedOnTaskId: integer("stacked_on_task_id"),
+  stackedOnSha: text("stacked_on_sha"),
   attemptNumber: integer("attempt_number"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
