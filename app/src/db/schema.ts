@@ -356,8 +356,29 @@ export const handoffs = pgTable("handoffs", {
   permissionDenials: jsonb("permission_denials"),
   // optional markdown TL;DR the session writes for the operator.
   summary: text("summary"),
+  // optional review checklist (array of strings) the session asks the
+  // reviewer to tick off. Tick state lives in checklistTicks, keyed by text.
+  checklist: jsonb("checklist").$type<string[]>(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// A reviewer's tick (and optional note) on one checklist item. Keyed by the
+// item's text rather than a handoff, so a tick survives a later handoff
+// wherever that item is unchanged; a row whose item left the latest
+// checklist is simply not shown (and comes back if the item does).
+export const checklistTicks = pgTable(
+  "checklist_ticks",
+  {
+    id: serial("id").primaryKey(),
+    taskId: integer("task_id").notNull().references(() => tasks.id),
+    item: text("item").notNull(),
+    checked: boolean("checked").notNull().default(false),
+    note: text("note"),
+    checkedAt: timestamp("checked_at", { withTimezone: true }),
+    checkedBy: text("checked_by"),
+  },
+  (table) => [uniqueIndex("checklist_ticks_task_item_idx").on(table.taskId, table.item)],
+);
 
 // Manually-entered allowance checkpoints (PLAN.md's I6 governor). Claude's
 // own UI only ever shows a whole-number percent remaining - no $ figure, no

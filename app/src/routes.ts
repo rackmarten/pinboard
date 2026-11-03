@@ -22,7 +22,9 @@ import {
   chatPermissionRules,
   sessionLimitReports,
   licenses,
+  checklistTicks,
 } from "./db/schema.js";
+import { mergeChecklist, parseChecklist, parseChecklistPatch } from "./checklist.js";
 import { getCostRollup, getUsageSummary, InteractiveDedupe, licenseIdForLinuxUser, runDailyDigest } from "./usage.js";
 import { normalizeTaskEnums, parentMap, storyShouldComplete, isTerminalStatus, dependencySatisfied, isReviewMode, REVIEW_MODES } from "./task-model.js";
 import { mergeBlockers, reworkStackedDependents, stackOnFor } from "./dependencies.js";
@@ -1186,6 +1188,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const id = Number((req.params as { id: string }).id);
     const body = req.body as Record<string, unknown>;
     const { actorType, actorName } = requireActor(body);
+    const checklist = parseChecklist(body.checklist);
 
     let agentId: number | null = null;
     let licenseId: number | null = null;
@@ -1223,6 +1226,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         numTurns: body.numTurns as number | undefined,
         permissionDenials: body.permissionDenials,
         summary: typeof body.summary === "string" ? body.summary : undefined,
+        checklist,
       })
       .returning();
     // Accumulate onto the task itself (PLAN.md's I5) - a task can pick up
@@ -1259,6 +1263,52 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     await Promise.all([deriveObservationFromUsage("week"), deriveObservationFromUsage("session")]);
     reply.code(201);
     return handoff;
+  });
+
+  // The review checklist: the latest handoff's items merged with the
+  // reviewer's ticks, which are keyed by item text (see checklist.ts).
+  async function taskChecklist(taskId: number) {
+    const [latest] = await db
+      .select({ id: handoffs.id, checklist: handoffs.checklist })
+      .from(handoffs)
+      .where(eq(handoffs.taskId, taskId))
+      .orderBy(desc(handoffs.createdAt), desc(handoffs.id))
+      .limit(1);
+    const ticks = await db.select().from(checklistTicks).where(eq(checklistTicks.taskId, taskId));
+    return { handoffId: latest?.id ?? null, items: mergeChecklist(latest?.checklist, ticks) };
+  }
+
+  app.get("/tasks/:id/checklist", async (req, reply) => {
+    const id = Number((req.params as { id: string }).id);
+    const [task] = await db.select({ id: tasks.id }).from(tasks).where(eq(tasks.id, id));
+    if (!task) return reply.code(404).send({ error: "not found" });
+    return taskChecklist(id);
+  });
+
+  // Tick, untick or note one item. Only items on the latest handoff's
+  // checklist can be changed; returns the whole merged checklist.
+  app.patch("/tasks/:id/checklist", async (req, reply) => {
+    const id = Number((req.params as { id: string }).id);
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const { actorName } = requireActor(body);
+    const patch = parseChecklistPatch(body);
+    const [task] = await db.select({ id: tasks.id }).from(tasks).where(eq(tasks.id, id));
+    if (!task) return reply.code(404).send({ error: "not found" });
+    const current = await taskChecklist(id);
+    if (!current.items.some((i) => i.item === patch.item)) throw badRequest("item is not on this task's checklist");
+
+    const set: Partial<typeof checklistTicks.$inferInsert> = {};
+    if (patch.checked !== undefined) {
+      set.checked = patch.checked;
+      set.checkedAt = patch.checked ? new Date() : null;
+      set.checkedBy = patch.checked ? actorName : null;
+    }
+    if (patch.note !== undefined) set.note = patch.note;
+    await db
+      .insert(checklistTicks)
+      .values({ taskId: id, item: patch.item, ...set })
+      .onConflictDoUpdate({ target: [checklistTicks.taskId, checklistTicks.item], set });
+    return taskChecklist(id);
   });
 
   app.get("/agents", async () => db.select().from(agents).orderBy(agents.name));

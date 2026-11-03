@@ -169,7 +169,9 @@ the root. Old root API calls are no longer aliased.
 | `POST /tasks/:id/control` | I4c's running-workers stop/kill - body `{actorType, actorName, action: "stop"\|"kill"}`, sets `controlAction`/`controlRequestedAt` for `foreman`'s runner to notice and act on |
 | `GET /pipeline/next` | every task currently in the post-PR pipeline, with what a stateless poller needs to act - stage, when it entered it, attempt count, the project's slug/`localPath`/`autoDeployAllowed`, and the task's latest PR url/branch/repo. Oldest stage first, so a backlog drains in the order it built up. Nothing drives this yet; #154's increment 2 builds the poller |
 | `POST /tasks/:id/pipeline` | advance, park or hand back one task - body `{actorType, actorName, to, repairReason?, repairContext?}`. The legal moves live in `app/src/pipeline.ts` and are checked here in one place, so a poller bug can't walk a task into a state the UI has no meaning for; an illegal move is a 409 naming what *was* allowed. A handback to `queued` requires a `repairReason` (`ci_failed`/`merge_conflict`/`deploy_failed`) and carries the evidence in `repairContext`. a handback to `queued` is refused unless the task is `executorMode: agent`; a `human+agent` task is parked in `rework` with the same `repairReason`/`repairContext`, and a later PATCH from `rework` to `queued` keeps them (any other PATCH to `queued`/`rework` clears them). Records one `pipeline` task event per transition |
-| `POST /tasks/:id/handoff` | Records a `handoffs` row (usage fields, `next`, an optional markdown TL;DR `summary`, etc.) and moves the task to `handoff` - body as above plus the handoff fields and an optional `agentName` |
+| `POST /tasks/:id/handoff` | Records a `handoffs` row (usage fields, `next`, an optional markdown TL;DR `summary`, an optional review `checklist` (array of strings, at most 50), etc.) and moves the task to `handoff` - body as above plus the handoff fields and an optional `agentName` |
+| `GET /tasks/:id/checklist` | The review checklist: `{handoffId, items: [{item, checked, note, checkedAt, checkedBy}]}`, the latest handoff's items merged with the reviewer's ticks. Ticks are stored per item text, so they survive a new handoff wherever an item is unchanged, and an item the new handoff dropped is no longer listed. `items` is empty when the latest handoff has no checklist |
+| `PATCH /tasks/:id/checklist` | Tick, untick or note one item - body `{actorType, actorName, item, checked?, note?}` (an empty `note` clears it). 400 for an item not on the latest checklist. Returns the merged checklist |
 | `POST /tasks/:id/asks` | a run's structured ask - `{kind: "question"\|"assumption", question, context?, options: [{label, rationale?, recommended?}], defaultOption?, threadId?}`. A question needs 2-4 options with exactly one `recommended`, or none for a free-text question; an assumption needs none. A new question notifies (kind `question`) with its text as the body. `GET /tasks/:id` returns open asks and those answered in the last 7 days as `asks` |
 | `GET /asks?status=open&taskId=` | Asks across all projects (newest first, max 200), each with `taskTitle`/`taskStatus`/`projectSlug`/`projectName`; `status` takes a comma list |
 | `POST /asks/:id/answer` | `{option?, text?}` (a question needs one of them; an assumption answered this way is `accepted`). Posts the answer into the ask's thread (or the task's latest one) as a human message, so a session waiting in `work task ask` picks it up, and moves a `needs_input` task back to `queued` (a `root-access` task with an ended grant lands in `rework`, as with `/pipeline`). 409 once already answered |
@@ -255,6 +257,12 @@ A past task adds three guards:
   routes also take `baseBranch`, `stackedOnTaskId` and `stackedOnSha` (see
   "Playtest review" below); a PATCH with only those and no `state` leaves the
   state alone.
+- **Review checklist.** A handoff can carry a `checklist`; the review card in
+  "Needs you" and the task page show it as checkboxes with an optional note
+  per item, and the card shows a "3/5 checked" count. Approving with any
+  unticked item opens a warning listing them, with a required comment that is
+  posted on the task before the approve runs. All ticked, or no checklist,
+  approves as before.
 - **`needs_input` status.** An agent parked on an unanswered question:
   `queued`/`executing`/`handoff -> needs_input` via `POST /tasks/:id/pipeline`, and
   back out to `queued` (operator answered, no `repairReason`, not an

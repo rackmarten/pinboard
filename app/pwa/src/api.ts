@@ -1258,10 +1258,41 @@ export interface Handoff {
   next: string | null;
   summary: string | null;
   costUsd: string | null;
+  checklist: string[] | null;
   createdAt: string;
 }
 
 // Newest first.
 export function getHandoffs(taskId: number): Promise<Handoff[]> {
   return api(`/tasks/${taskId}/handoffs`);
+}
+
+// the latest handoff's review checklist with the reviewer's ticks, keyed by
+// item text on the server so ticks survive a new handoff.
+export interface ChecklistItem {
+  item: string;
+  checked: boolean;
+  note: string | null;
+  checkedAt: string | null;
+  checkedBy: string | null;
+}
+
+export interface Checklist {
+  handoffId: number | null;
+  items: ChecklistItem[];
+}
+
+export function getChecklist(taskId: number): Promise<Checklist> {
+  return api(`/tasks/${taskId}/checklist`);
+}
+
+export function updateChecklistItem(
+  taskId: number,
+  change: { item: string; checked?: boolean; note?: string | null },
+  actorName = "marek",
+): Promise<Checklist> {
+  return api(`/tasks/${taskId}/checklist`, {
+    method: "PATCH",
+    body: JSON.stringify({ actorType: "human", actorName, ...change }),
+  });
 }

@@ -17,6 +17,14 @@ publishes the container image `ghcr.io/rackmarten/pinboard` at that version.
   parent has merged (409 `merge #<id> first`), and rejecting a parent sends
   its stacked dependents back to rework with a comment. PR rows record
   `baseBranch`, `stackedOnTaskId` and `stackedOnSha` for restacking.
+- Review checklists. `POST /tasks/:id/handoff` accepts an optional
+  `checklist` (array of strings); clients that send none keep working.
+  `GET`/`PATCH /tasks/:id/checklist` read the latest handoff's items with
+  their ticks and tick, untick or note one item. Ticks are keyed by item text,
+  so they survive a new handoff wherever an item is unchanged. The review card
+  in "Needs you" and the task page show the checklist as checkboxes with a
+  note per item and a "3/5 checked" count, and approving with unticked items
+  asks for a comment, posted on the task before the approve runs.
 - `POST /api/usage` records spend reported by an interactive Claude Code
   session (`{costUsd, source: "interactive", linuxUser, sessionId}`), with the
   license resolved from its Linux user. A repeat of the same session and cost

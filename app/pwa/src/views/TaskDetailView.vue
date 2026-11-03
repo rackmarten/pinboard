@@ -29,7 +29,9 @@ import {
   type TaskDetail,
   type TaskEvent,
   type TaskRelation,
+  getChecklist,
   getHandoffs,
+  type ChecklistItem,
   type Handoff,
   createChatThread,
   sendChatMessage,
@@ -45,6 +47,8 @@ import { executorModeIcon, prStateColor, taskTypeColor, taskTypeIcon } from "../
 import { groupRelations } from "../relations.js";
 import { isResolved, openBlockers, orderChildren } from "../story.js";
 import JournalTimeline from "../components/JournalTimeline.vue";
+import ChecklistPanel from "../components/ChecklistPanel.vue";
+import { checkedCountLabel } from "../approve.js";
 
 const props = defineProps<{ id: string }>();
 const router = useRouter();
@@ -55,6 +59,8 @@ const comments = ref<Comment[]>([]);
 // and the full handoff in a collapsed panel.
 const handoffs = ref<Handoff[]>([]);
 const latestHandoff = computed(() => handoffs.value[0]);
+// the latest handoff's review checklist with its ticks (see ChecklistPanel).
+const checklist = ref<ChecklistItem[]>([]);
 const HANDOFF_FIELDS = [
   ["completed", "Completed"],
   ["changed", "Changed"],
@@ -364,7 +370,11 @@ async function load(): Promise<void> {
       getEvents(taskId.value),
       getHandoffs(taskId.value),
     ]);
-    await Promise.all([loadTaskAncestors(), loadStoryChildren()]);
+    await Promise.all([
+      loadTaskAncestors(),
+      loadStoryChildren(),
+      getChecklist(taskId.value).then((c) => (checklist.value = c.items)),
+    ]);
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
   } finally {
@@ -575,6 +585,13 @@ function formatDate(iso: string): string {
             <div class="text-caption text-medium-emphasis mb-1">Latest handoff, {{ formatDate(latestHandoff.createdAt) }}</div>
             <div class="description-html" v-html="renderDescriptionHtml(latestHandoff.summary)" />
           </v-alert>
+
+          <v-card v-if="checklist.length" variant="outlined">
+            <v-card-subtitle class="pt-3">Review checklist · {{ checkedCountLabel(checklist) }}</v-card-subtitle>
+            <v-card-text>
+              <ChecklistPanel v-model:items="checklist" :task-id="taskId" />
+            </v-card-text>
+          </v-card>
 
           <div v-if="descriptionHtml" class="text-body-1 description-html" v-html="descriptionHtml" />
           </div>
