@@ -212,7 +212,7 @@ test("runBudgetForEstimate floors a tiny or cold-start estimate", () => {
 // whole 5h session window in one run.
 test("runBudgetForEstimate caps a runaway estimate at the ceiling", () => {
   assert.equal(runBudgetForEstimate(40), RUN_BUDGET_CEILING_USD);
-  assert.equal(runBudgetForEstimate(5.1), RUN_BUDGET_CEILING_USD);
+  assert.equal(runBudgetForEstimate(13.1), RUN_BUDGET_CEILING_USD);
 });
 
 // The concrete regression: a past task needed slightly more than the old
@@ -223,14 +223,15 @@ test("runBudgetForEstimate clears the wall a past task kept hitting at $2.02", (
 
 // the gate's estimate is the project mean, so without an effort
 // floor an effort-8 task got the same ~$2 as a version bump.
-test("runBudgetForTask leaves effort 1-2 at the $2 floor", () => {
+test("runBudgetForTask leaves effort 1 at the $2 floor", () => {
   assert.equal(runBudgetForTask(0.5, 1), RUN_BUDGET_FLOOR_USD);
-  assert.equal(runBudgetForTask(0.5, 2), RUN_BUDGET_FLOOR_USD);
+  assert.equal(runBudgetForTask(0.5, 2), 4);
 });
 
-test("runBudgetForTask scales with effort 5 and 8", () => {
-  assert.equal(runBudgetForTask(0.5, 5), 5);
-  assert.equal(runBudgetForTask(0.5, 8), 8);
+test("runBudgetForTask scales with effort 3, 5 and 8", () => {
+  assert.equal(runBudgetForTask(0.5, 3), 6);
+  assert.equal(runBudgetForTask(0.5, 5), 10);
+  assert.equal(runBudgetForTask(0.5, 8), 16);
 });
 
 test("runBudgetForTask with no effort keeps the estimate-only budget", () => {
@@ -239,6 +240,7 @@ test("runBudgetForTask with no effort keeps the estimate-only budget", () => {
 });
 
 test("runBudgetForTask never goes below the estimate budget or above the ceiling", () => {
-  assert.equal(runBudgetForTask(3, 2), 6);
+  assert.equal(runBudgetForTask(4, 2), 8);
   assert.equal(runBudgetForTask(0.5, 13), RUN_BUDGET_CEILING_USD);
+  assert.equal(runBudgetForTask(0.5, 21), RUN_BUDGET_CEILING_USD);
 });
