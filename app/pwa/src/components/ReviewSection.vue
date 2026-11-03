@@ -5,12 +5,14 @@ import {
   addComment,
   advancePipeline,
   approveTask,
+  getChecklist,
   getHandoffs,
   getProjects,
   getPullRequests,
   getTasks,
   rejectTask,
   updateTask,
+  type ChecklistItem,
   type Project,
   type PullRequest,
   type Task,
@@ -18,7 +20,8 @@ import {
 import { usePolling } from "../composables/usePolling.js";
 import TaskPriorityChip from "../components/TaskPriorityChip.vue";
 import { statusColor, taskTypeIcon } from "../display.js";
-import { approveAction } from "../approve.js";
+import ChecklistPanel from "../components/ChecklistPanel.vue";
+import { approveAction, approveWarningComment, canConfirmApprove, checkedCountLabel, needsApproveWarning, uncheckedItems } from "../approve.js";
 import { renderDescriptionHtml } from "../description-html.js";
 import { REVIEW_STATUSES, handoffTldr } from "../inbox.js";
 
@@ -65,6 +68,18 @@ async function loadTldrs(): Promise<void> {
   tldrs.value = { ...tldrs.value, ...Object.fromEntries(found) };
 }
 
+// The latest handoff's review checklist per task, fetched once per task id
+// like the TL;DR; ticking replaces the entry with the server's merged list.
+const checklists = ref<Record<number, ChecklistItem[]>>({});
+
+async function loadChecklists(): Promise<void> {
+  const missing = tasks.value.filter((t) => !(t.id in checklists.value));
+  const found = await Promise.all(
+    missing.map((t) => getChecklist(t.id).then((c) => [t.id, c.items] as const).catch(() => [t.id, []] as const)),
+  );
+  checklists.value = { ...checklists.value, ...Object.fromEntries(found) };
+}
+
 const rejectDialog = ref(false);
 useBackClose(rejectDialog);
 const rejectTarget = ref<Task | null>(null);
@@ -75,7 +90,7 @@ async function load(): Promise<void> {
   error.value = null;
   try {
     tasks.value = await getTasks({ status: QUEUE_STATUSES });
-    await Promise.all([loadPullRequests(), loadTldrs()]);
+    await Promise.all([loadPullRequests(), loadTldrs(), loadChecklists()]);
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
   } finally {
@@ -104,7 +119,7 @@ usePolling(() =>
   getTasks({ status: QUEUE_STATUSES })
     .then((t) => {
       tasks.value = t;
-      return Promise.all([loadPullRequests(), loadTldrs()]).then(() => {});
+      return Promise.all([loadPullRequests(), loadTldrs(), loadChecklists()]).then(() => {});
     })
     .catch(() => {}),
 );
@@ -113,7 +128,40 @@ function projectName(id: number): string {
   return projects.value.find((p) => p.id === id)?.name ?? `#${id}`;
 }
 
+// Approving with unticked checklist items goes through a warning dialog that
+// needs a comment; the comment is posted first, then the approve runs.
+const approveDialog = ref(false);
+useBackClose(approveDialog);
+const approveTarget = ref<Task | null>(null);
+const approveComment = ref("");
+const approveUnchecked = ref<string[]>([]);
+
 async function approve(task: Task): Promise<void> {
+  const items = checklists.value[task.id] ?? [];
+  if (!needsApproveWarning(items)) return runApprove(task);
+  approveTarget.value = task;
+  approveUnchecked.value = uncheckedItems(items);
+  approveComment.value = "";
+  approveDialog.value = true;
+}
+
+async function confirmApprove(): Promise<void> {
+  const task = approveTarget.value;
+  if (!task || !canConfirmApprove(approveComment.value)) return;
+  acting.value = task.id;
+  error.value = null;
+  try {
+    await addComment(task.id, approveWarningComment(approveUnchecked.value, approveComment.value));
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+    acting.value = null;
+    return;
+  }
+  approveDialog.value = false;
+  await runApprove(task);
+}
+
+async function runApprove(task: Task): Promise<void> {
   acting.value = task.id;
   error.value = null;
   try {
@@ -212,6 +260,10 @@ async function confirmReject(requeue: boolean): Promise<void> {
           </template>
         </v-card-item>
         <v-card-text v-if="tldrs[task.id]" class="pt-0 text-body-2 description-html" v-html="renderDescriptionHtml(tldrs[task.id]!)" />
+        <v-card-text v-if="checklists[task.id]?.length" class="pt-0">
+          <div class="text-caption text-medium-emphasis mb-1">Checklist · {{ checkedCountLabel(checklists[task.id]!) }}</div>
+          <ChecklistPanel :items="checklists[task.id]!" :task-id="task.id" @update:items="checklists[task.id] = $event" />
+        </v-card-text>
         <v-card-text v-if="isPreMergeHold(task)" class="pt-0">
           <v-alert type="warning" density="compact" variant="tonal" icon="mdi-gate-alert">
             Held before merge - nothing has reached main yet. Read the diff before approving.
@@ -232,6 +284,37 @@ async function confirmReject(requeue: boolean): Promise<void> {
       </v-card>
     </v-list>
     <p v-else-if="!loading" class="text-medium-emphasis">Nothing waiting for review.</p>
+
+    <v-dialog v-model="approveDialog" max-width="480">
+      <v-card title="Approve with unchecked items?">
+        <v-card-text>
+          <p class="mb-2">These checklist items are not ticked:</p>
+          <ul class="mb-3 ml-5">
+            <li v-for="item in approveUnchecked" :key="item">{{ item }}</li>
+          </ul>
+          <v-textarea
+            v-model="approveComment"
+            label="Why approve anyway? (posted as a comment)"
+            rows="3"
+            density="comfortable"
+            autofocus
+          />
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="approveDialog = false">Cancel</v-btn>
+          <v-btn
+            variant="tonal"
+            color="success"
+            :disabled="!canConfirmApprove(approveComment)"
+            :loading="acting === approveTarget?.id"
+            @click="confirmApprove()"
+          >
+            Approve
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
 
     <v-dialog v-model="rejectDialog" max-width="480">
       <v-card title="Reject task">

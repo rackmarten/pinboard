@@ -309,6 +309,13 @@
       "when": 1793699477718,
       "tag": "0043_playtest_review_mode",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1793700346592,
+      "tag": "0044_review_checklist",
+      "breakpoints": true
     }
   ]
 }

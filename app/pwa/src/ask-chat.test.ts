@@ -19,7 +19,7 @@ function ask(overrides: Partial<SeedAsk> = {}): SeedAsk {
 }
 
 function handoff(summary: string): Handoff {
-  return { id: 1, taskId: 506, completed: null, changed: null, verified: null, problems: null, discovered: null, next: null, summary, costUsd: null, createdAt: "" };
+  return { id: 1, taskId: 506, completed: null, changed: null, verified: null, problems: null, discovered: null, next: null, summary, costUsd: null, checklist: null, createdAt: "" };
 }
 
 describe("askSeedMessage", () => {
