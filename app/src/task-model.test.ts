@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { normalizeTaskEnums, parentMap, storyShouldComplete, dependencySatisfied } from "./task-model.js";
+import { normalizeTaskEnums, parentMap, storyShouldComplete, dependencySatisfied, dependencyGate, unmergedDependencies, isReviewMode } from "./task-model.js";
 import { rankRunnableTasks, type RunnableTask } from "./plan.js";
 
 test("unknown status, taskType or executorMode is rejected", () => {
@@ -56,4 +56,46 @@ test("a depends_on target in review satisfies only when every PR is merged", () 
 test("verifying -> done closes the parent story when it was the last open child", () => {
   assert.equal(storyShouldComplete("planned", ["done", "rejected", "verifying"]), false);
   assert.equal(storyShouldComplete("planned", ["done", "rejected", "done"]), true);
+});
+
+const inReview = (taskId: number, prStates: string[] = ["open"]) => ({ taskId, status: "review", prStates });
+
+test("a standard project waits for every dependency to merge", () => {
+  assert.deepEqual(dependencyGate("standard", []), { blocked: false, stackOnTaskId: null });
+  assert.deepEqual(dependencyGate("standard", [inReview(1, ["merged"])]), { blocked: false, stackOnTaskId: null });
+  assert.deepEqual(dependencyGate("standard", [inReview(1)]), { blocked: true });
+});
+
+test("a playtest task stacks on its one dependency still in review", () => {
+  assert.deepEqual(dependencyGate("playtest", [inReview(1)]), { blocked: false, stackOnTaskId: 1 });
+  assert.deepEqual(dependencyGate("playtest", [inReview(1), { taskId: 2, status: "done", prStates: [] }]), { blocked: false, stackOnTaskId: 1 });
+  // one PR merged and one still open: stack on the open one
+  assert.deepEqual(dependencyGate("playtest", [inReview(1, ["merged", "open"])]), { blocked: false, stackOnTaskId: 1 });
+  // everything merged: nothing to stack on
+  assert.deepEqual(dependencyGate("playtest", [inReview(1, ["merged"])]), { blocked: false, stackOnTaskId: null });
+});
+
+test("a playtest task waits when stacking isn't possible", () => {
+  // two unmerged dependencies
+  assert.deepEqual(dependencyGate("playtest", [inReview(1), inReview(2)]), { blocked: true });
+  // in review without a PR, or only a closed one
+  assert.deepEqual(dependencyGate("playtest", [inReview(1, [])]), { blocked: true });
+  assert.deepEqual(dependencyGate("playtest", [inReview(1, ["closed"])]), { blocked: true });
+  // not in review yet
+  assert.deepEqual(dependencyGate("playtest", [{ taskId: 1, status: "executing", prStates: ["open"] }]), { blocked: true });
+  assert.deepEqual(dependencyGate("playtest", [{ taskId: 1, status: "awaiting_ci", prStates: ["open"] }]), { blocked: true });
+  // one stackable and one not started
+  assert.deepEqual(dependencyGate("playtest", [inReview(1), { taskId: 2, status: "queued", prStates: [] }]), { blocked: true });
+});
+
+test("unmergedDependencies lists what has to merge first", () => {
+  assert.deepEqual(unmergedDependencies([inReview(1), inReview(2, ["merged"]), { taskId: 3, status: "done", prStates: [] }]), [1]);
+  assert.deepEqual(unmergedDependencies([]), []);
+});
+
+test("review modes", () => {
+  assert.equal(isReviewMode("standard"), true);
+  assert.equal(isReviewMode("playtest"), true);
+  assert.equal(isReviewMode("Playtest"), false);
+  assert.equal(isReviewMode(undefined), false);
 });

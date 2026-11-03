@@ -122,8 +122,10 @@ async function approve(task: Task): Promise<void> {
       await addComment(task.id, "Pre-merge hold released via review queue - the pipeline may merge and deploy this.");
       await advancePipeline(task.id, "awaiting_merge");
     } else if (action === "merge") {
-      await addComment(task.id, "Approved via review queue - merging.");
+      // move first: a stacked playtest PR is refused until its parent merges,
+      // and the comment would then claim a merge that isn't happening.
       await advancePipeline(task.id, "awaiting_merge");
+      await addComment(task.id, "Approved via review queue - merging.");
     } else {
       await addComment(task.id, "Approved via review queue.");
       await approveTask(task.id);
