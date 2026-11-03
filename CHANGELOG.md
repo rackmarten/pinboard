@@ -33,6 +33,8 @@ publishes the container image `ghcr.io/rackmarten/pinboard` at that version.
   never toward the period or session spend that gates dispatch.
 
 ### Changed
+- A run's budget is now $2 per effort point (was $1), with the ceiling
+  raised from $10 to $26, so effort 3 gets $6 and effort 8 gets $16.
 - Cost estimates now scale with a task's effort, on by default. A task with
   an effort is estimated at the mean cost of completed tasks at that effort
   level (5+ samples), else from an intercept + slope line fitted over all

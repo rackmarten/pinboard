@@ -219,7 +219,7 @@ export function estimateTaskCost(task: EstimatableTask, model: CostModel): CostE
 // attempt got a fresh cap and none of them could ever finish inside it.
 export const RUN_BUDGET_MULTIPLIER = 2;
 export const RUN_BUDGET_FLOOR_USD = 2;
-export const RUN_BUDGET_CEILING_USD = 10;
+export const RUN_BUDGET_CEILING_USD = 26;
 
 export function runBudgetForEstimate(
   estimateUsd: number,
@@ -235,10 +235,13 @@ export function runBudgetForEstimate(
 // gate's model ran with useEffortScaling off, so the estimate above was the
 // project mean - mostly cheap version bumps - and every task got about $2
 // whatever its size. Effort-8 tasks (#477, #375) stopped after scoping; done
-// effort-5 tasks have p90 $3.92 and max $5.79. About $1 per effort point
-// clears that, and the ceiling still stops a runaway. A task with no effort
-// (or effort 1-2) gets exactly what runBudgetForEstimate gives it.
-export const RUN_BUDGET_USD_PER_EFFORT_POINT = 1;
+// effort-5 tasks have p90 $3.92 and max $5.79. $1 per effort point cleared
+// that, but agents still stopped early on effort-3 tasks with a wide scope,
+// since every run first spends about $0.50 reading the workspace docs. $2
+// per point leaves room for that; the ceiling (effort 13 at $2) still stops
+// a runaway. A task with no effort gets exactly what runBudgetForEstimate
+// gives it, and effort 1 stays at the floor.
+export const RUN_BUDGET_USD_PER_EFFORT_POINT = 2;
 
 export function runBudgetForTask(
   estimateUsd: number,
