@@ -2,6 +2,12 @@
 import { computed, ref, watch } from "vue";
 import { useBackClose } from "@rackmarten/ui-kit";
 import { createProject, updateProject, type Project, type ReviewMode } from "../api.js";
+import {
+  fromReasoningEffortField,
+  reasoningEffortItems,
+  toReasoningEffortField,
+  type ReasoningEffortField,
+} from "../reasoning-effort.js";
 import DescriptionEditor from "./DescriptionEditor.vue";
 
 const props = defineProps<{
@@ -30,6 +36,8 @@ const repoUrl = ref("");
 const parentProjectId = ref<number | null>(null);
 const autoDeployAllowed = ref(false);
 const reviewMode = ref<ReviewMode>("standard");
+const defaultReasoningEffort = ref<ReasoningEffortField>("inherit");
+const reasoningEffortOptions = reasoningEffortItems("Foreman default");
 const context = ref("");
 const relatedProjectIds = ref<number[]>([]);
 const saving = ref(false);
@@ -56,6 +64,7 @@ function reset(): void {
   parentProjectId.value = p?.parentProjectId ?? null;
   autoDeployAllowed.value = p?.autoDeployAllowed ?? false;
   reviewMode.value = p?.reviewMode ?? "standard";
+  defaultReasoningEffort.value = toReasoningEffortField(p?.defaultReasoningEffort);
   context.value = p?.context ?? "";
   relatedProjectIds.value = p?.relatedProjectIds ?? [];
   error.value = null;
@@ -81,6 +90,7 @@ async function save(): Promise<void> {
     parentProjectId: parentProjectId.value,
     autoDeployAllowed: autoDeployAllowed.value,
     reviewMode: reviewMode.value,
+    defaultReasoningEffort: fromReasoningEffortField(defaultReasoningEffort.value),
     context: context.value || undefined,
     relatedProjectIds: relatedProjectIds.value,
   };
@@ -175,6 +185,16 @@ async function save(): Promise<void> {
           hint="Review here means playing a build. A task may start stacked on one dependency that is still in review, and a stacked PR can only be approved after its parent merges."
           persistent-hint
           @update:model-value="reviewMode = $event ? 'playtest' : 'standard'"
+        />
+        <v-select
+          v-model="defaultReasoningEffort"
+          label="Default reasoning effort"
+          :items="reasoningEffortOptions"
+          item-title="title"
+          item-value="value"
+          density="comfortable"
+          hint="How hard the model thinks on this project's tasks when a task sets none of its own. Separate from a task's story-point effort."
+          persistent-hint
         />
         <v-alert v-if="error" type="error" density="compact" variant="tonal">{{ error }}</v-alert>
       </v-card-text>

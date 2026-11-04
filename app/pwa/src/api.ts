@@ -1,4 +1,5 @@
 import type { ChatEvent } from "./chat-transcript.js";
+import type { ReasoningEffort } from "./reasoning-effort.js";
 
 export type { ChatEvent } from "./chat-transcript.js";
 
@@ -91,6 +92,8 @@ export interface Project {
   autoDeployAllowed: boolean;
   // see app/src/task-model.ts's REVIEW_MODES.
   reviewMode: ReviewMode;
+  // see src/reasoning-effort.ts; null leaves foreman's default.
+  defaultReasoningEffort: ReasoningEffort | null;
   archived: boolean;
   context: string | null;
   relatedProjectIds: number[];
@@ -150,6 +153,10 @@ export interface Task {
   priority: number;
   autonomyLevel: number | null;
   estimatedEffort: number | null;
+  // see src/reasoning-effort.ts. effective* is the task's own value, else its
+  // project's default, else null.
+  reasoningEffort: ReasoningEffort | null;
+  effectiveReasoningEffort?: ReasoningEffort | null;
   actualCostUsd: string | null;
   actualDurationMs: number | null;
   leaseExpiresAt: string | null;
@@ -244,6 +251,7 @@ export interface ProjectInput {
   parentProjectId?: number | null;
   autoDeployAllowed?: boolean;
   reviewMode?: ReviewMode;
+  defaultReasoningEffort?: ReasoningEffort | null;
   context?: string;
   relatedProjectIds?: number[];
 }
@@ -310,6 +318,7 @@ export interface TaskInput {
   executorMode?: string;
   priority?: number;
   estimatedEffort?: number | null;
+  reasoningEffort?: ReasoningEffort | null;
   relatedProjectIds?: number[];
   rootScope?: number[];
 }

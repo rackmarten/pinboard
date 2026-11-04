@@ -26,7 +26,7 @@ import {
 } from "./db/schema.js";
 import { mergeChecklist, parseChecklist, parseChecklistPatch } from "./checklist.js";
 import { getCostRollup, getUsageSummary, InteractiveDedupe, licenseIdForLinuxUser, runDailyDigest } from "./usage.js";
-import { normalizeTaskEnums, parentMap, storyShouldComplete, isTerminalStatus, dependencySatisfied, isReviewMode, REVIEW_MODES } from "./task-model.js";
+import { normalizeTaskEnums, parentMap, storyShouldComplete, isTerminalStatus, dependencySatisfied, isReviewMode, REVIEW_MODES, isReasoningEffort, REASONING_EFFORTS, effectiveReasoningEffort } from "./task-model.js";
 import { mergeBlockers, reworkStackedDependents, stackOnFor } from "./dependencies.js";
 import { readinessApplies, readinessFailures, toWorkspaceRepos, type ReadinessTask, type WorkspaceRepo } from "./readiness.js";
 import { listJournal, recordEvent as recordJournalEvent, unreadNotificationCount } from "./journal.js";
@@ -179,6 +179,31 @@ function validatePrState(value: unknown): string {
 function validateReviewMode(value: unknown): string {
   if (!isReviewMode(value)) throw badRequest(`reviewMode must be one of ${REVIEW_MODES.join(", ")}`);
   return value;
+}
+
+// a task's reasoningEffort or a project's defaultReasoningEffort: null
+// clears it (inherit / foreman's default).
+function validateReasoningEffort(field: string, value: unknown): string | null {
+  if (value === null) return null;
+  if (!isReasoningEffort(value)) throw badRequest(`${field} must be one of ${REASONING_EFFORTS.join(", ")} or null`);
+  return value;
+}
+
+// adds effectiveReasoningEffort (the task's own, else its project's
+// default) to task rows, so a client needn't look the project up.
+async function withEffectiveReasoningEffort<T extends { projectId: number; reasoningEffort: string | null }>(
+  rows: T[],
+): Promise<(T & { effectiveReasoningEffort: string | null })[]> {
+  const projectIds = [...new Set(rows.filter((t) => t.reasoningEffort === null).map((t) => t.projectId))];
+  const defaults = new Map<number, string | null>();
+  if (projectIds.length) {
+    const found = await db
+      .select({ id: projects.id, defaultReasoningEffort: projects.defaultReasoningEffort })
+      .from(projects)
+      .where(inArray(projects.id, projectIds));
+    for (const p of found) defaults.set(p.id, p.defaultReasoningEffort);
+  }
+  return rows.map((t) => ({ ...t, effectiveReasoningEffort: effectiveReasoningEffort(t.reasoningEffort, defaults.get(t.projectId)) }));
 }
 
 // the stacking fields foreman reports with a PR (all optional, each nullable).
@@ -359,6 +384,7 @@ const JOURNALED_TASK_FIELDS = [
   "priority",
   "autonomyLevel",
   "estimatedEffort",
+  "reasoningEffort",
   "relatedProjectIds",
   "projectId",
   "rootScope",
@@ -498,11 +524,14 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       parentProjectId?: number | null;
       autoDeployAllowed?: boolean;
       reviewMode?: string;
+      defaultReasoningEffort?: string | null;
       context?: string;
       relatedProjectIds?: number[];
     };
     if (!body.slug || !body.name) throw badRequest("slug and name are required");
     const reviewMode = body.reviewMode === undefined ? "standard" : validateReviewMode(body.reviewMode);
+    const defaultReasoningEffort =
+      body.defaultReasoningEffort === undefined ? null : validateReasoningEffort("defaultReasoningEffort", body.defaultReasoningEffort);
     if (body.parentProjectId != null) await assertNoProjectCycle(body.parentProjectId);
     await assertProjectIdsExist(body.relatedProjectIds ?? []);
     const [project] = await db
@@ -517,6 +546,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         parentProjectId: body.parentProjectId ?? null,
         autoDeployAllowed: body.autoDeployAllowed ?? false,
         reviewMode,
+        defaultReasoningEffort,
         context: body.context,
         relatedProjectIds: body.relatedProjectIds ?? [],
       })
@@ -584,11 +614,13 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       parentProjectId?: number | null;
       autoDeployAllowed?: boolean;
       reviewMode?: string;
+      defaultReasoningEffort?: string | null;
       archived?: boolean;
       context?: string;
       relatedProjectIds?: number[];
     };
     if ("reviewMode" in body) validateReviewMode(body.reviewMode);
+    if ("defaultReasoningEffort" in body) validateReasoningEffort("defaultReasoningEffort", body.defaultReasoningEffort);
     if (body.parentProjectId != null) await assertNoProjectCycle(body.parentProjectId, id);
     if (body.relatedProjectIds) await assertProjectIdsExist(body.relatedProjectIds);
     const actor = actorFromRequest(req);
@@ -660,7 +692,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       .where(conditions.length ? and(...conditions) : undefined)
       .orderBy(desc(tasks.priority), desc(tasks.createdAt));
     const parents = await parentIdsFor(rows.map((t) => t.id));
-    return rows.map((t) => ({ ...t, parentTaskId: parents.get(t.id) ?? null }));
+    return (await withEffectiveReasoningEffort(rows)).map((t) => ({ ...t, parentTaskId: parents.get(t.id) ?? null }));
   });
 
   app.post("/tasks", async (req, reply) => {
@@ -674,6 +706,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       priority?: number;
       autonomyLevel?: number;
       estimatedEffort?: number;
+      reasoningEffort?: string | null;
       relatedProjectIds?: number[];
       rootScope?: unknown;
     };
@@ -683,6 +716,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const rootScope = validateRootScope(body.rootScope ?? []);
     if (!rootScope.ok) throw badRequest(rootScope.reason);
     const estimatedEffort = validateEffort(body.estimatedEffort);
+    const reasoningEffort = body.reasoningEffort === undefined ? null : validateReasoningEffort("reasoningEffort", body.reasoningEffort);
     await assertProjectIdsExist(body.relatedProjectIds ?? []);
     const force = (body as Record<string, unknown>).force === true;
     if (body.status === "queued" && !force && !(await readinessGate({ ...body, estimatedEffort }, reply))) return reply;
@@ -700,13 +734,14 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         priority: body.priority ?? 0,
         autonomyLevel: body.autonomyLevel,
         estimatedEffort,
+        reasoningEffort,
         relatedProjectIds: body.relatedProjectIds ?? [],
         rootScope: rootScope.ctids,
       })
       .returning();
     await recordJournalEvent({ taskId: task.id, eventType: "created", ...actorFromRequest(req), payload: { status: task.status } });
     reply.code(201);
-    return task;
+    return (await withEffectiveReasoningEffort([task]))[0];
   });
 
   app.get("/tasks/:id", async (req, reply) => {
@@ -723,7 +758,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     // open and recent asks, so the runner can put the Q&A into
     // the next attempt's prompt. stackOn: in a playtest project, the
     // dependency whose PR branch foreman cuts this task's branch from.
-    return { ...task, labels: taskLabelRows, asks: await asksForTask(id), stackOn: await stackOnFor(id) };
+    const [withEffort] = await withEffectiveReasoningEffort([task]);
+    return { ...withEffort, labels: taskLabelRows, asks: await asksForTask(id), stackOn: await stackOnFor(id) };
   });
 
   app.patch("/tasks/:id", async (req, reply) => {
@@ -732,6 +768,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const enums = normalizeTaskEnums(body);
     if (!enums.ok) throw badRequest(enums.reason);
     if ("estimatedEffort" in body) body.estimatedEffort = validateEffort(body.estimatedEffort);
+    if ("reasoningEffort" in body) body.reasoningEffort = validateReasoningEffort("reasoningEffort", body.reasoningEffort);
     // JSON has no Date type, so a caller sending a timestamp field (e.g.
     // foreman's renewLease, which PATCHes leaseExpiresAt) sends an ISO
     // string - drizzle's timestamp columns expect a real Date and throw
@@ -812,7 +849,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       (f) => f in body && before && JSON.stringify((before as Record<string, unknown>)[f]) !== JSON.stringify((task as Record<string, unknown>)[f]),
     );
     if (changed.length) await recordEvent(id, "updated", actor.actorType, actor.actorName, { fields: changed });
-    return task;
+    return (await withEffectiveReasoningEffort([task]))[0];
   });
 
   app.get("/tasks/:id/comments", async (req) => {
@@ -1058,7 +1095,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       .where(eq(tasks.id, id))
       .returning();
     await recordEvent(id, "claim", actorType, actorName, leaseSeconds ? { leaseSeconds } : undefined);
-    return task;
+    return (await withEffectiveReasoningEffort([task]))[0];
   });
 
   app.post("/tasks/:id/complete", async (req, reply) => {

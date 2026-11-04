@@ -143,10 +143,10 @@ the root. Old root API calls are no longer aliased.
 | --- | --- |
 | `GET /health` | Liveness + DB check |
 | `GET /projects` / `POST /projects` | List / create projects (`localPath` is the local checkout's path relative to `work`'s workspace root, e.g. `my-org/my-repo`; used by `work plan sync`) |
-| `GET /projects/:id` / `PATCH /projects/:id` | Read / update a project. `reviewMode` is `standard` or `playtest` (400 otherwise) |
+| `GET /projects/:id` / `PATCH /projects/:id` | Read / update a project. `reviewMode` is `standard` or `playtest` (400 otherwise). `defaultReasoningEffort` is `medium`, `high` or `null` (see "Reasoning effort") |
 | `GET /projects/:id/handoffs?limit=` | Latest handoffs for a project, most recent first - powers `work plan sync` |
 | `GET /tasks?projectId=&status=&taskType=&executorMode=&parentTaskId=` | Filtered task list. Each row carries `parentTaskId` (from `parent`/`child` relations, `null` if none); `parentTaskId=` lists that task's children |
-| `POST /tasks` | Create a task. `status`/`taskType`/`executorMode` must be known values (list in `app/src/task-model.ts`) or it's a 400; `status: "backlog"` is accepted as an alias of `defined`. Same rules on `PATCH /tasks/:id` |
+| `POST /tasks` | Create a task. `status`/`taskType`/`executorMode` must be known values (list in `app/src/task-model.ts`) or it's a 400; `status: "backlog"` is accepted as an alias of `defined`. `reasoningEffort` is `medium`, `high` or `null`. Same rules on `PATCH /tasks/:id` |
 | `GET /tasks/:id` | Task detail, including its labels, open asks and `stackOn` (see "Playtest review") |
 | `PATCH /tasks/:id` | Update a task. When a child of a `story` task reaches `done`/`rejected` (here, via `/complete` or the pipeline) and all its siblings are too, the story moves to `done` with a `status` event from `system`/`pinboard`. A `story` is never ranked runnable by `/plan` |
 | `GET /tasks/:id/comments` / `POST /tasks/:id/comments` | Task discussion thread |
@@ -208,6 +208,18 @@ the root. Old root API calls are no longer aliased.
 `estimatedEffort` is constrained to `1, 2, 3, 5, 8, 13` (a story-point-like
 AI effort scale, not engineering time) - the I0 spike found an
 unconstrained integer let the model invent a value of `1000`.
+
+**Reasoning effort.** Separate from `estimatedEffort`, which sizes the work,
+`reasoningEffort` on a task and `defaultReasoningEffort` on a project say how
+hard the model should think when foreman runs it (`claude -p --effort`).
+Both are `medium`, `high` or `null`; anything else is a 400, and `null`
+clears it. Every task read (`GET /tasks`, `GET /tasks/:id`, and the task
+returned by create, `PATCH` and `/claim`) also carries
+`effectiveReasoningEffort`: the task's own value, else its project's default,
+else `null` (foreman's default). It has no effect on readiness, cost
+estimates or the governor. In the PWA it is the "Reasoning effort" select in
+the task form (Inherit / Medium / High) and "Default reasoning effort" in the
+project form.
 
 **Cost estimates.** The planner estimates each queued task's cost from
 completed tasks with a recorded cost (`app/src/cost-model.ts`). Cost rises
@@ -359,7 +371,11 @@ screen - same `tailnet-trust` gate as the API.
 Both cover the logic that has no UI and no database in it - normalisation,
 folding, planning, cost - so the parts most likely to be got wrong twice do
 not have to be re-checked by hand. The server suite needs no live Postgres
-(its `DATABASE_URL` is a placeholder that nothing connects to). The PWA suite
+(its `DATABASE_URL` is a placeholder that nothing connects to). A few
+database-backed tests (migrations on an existing database, reasoning-effort
+reads) run only when `PINBOARD_TEST_DATABASE_URL` points at a Postgres server
+they may create and drop a scratch database on, e.g.
+`PINBOARD_TEST_DATABASE_URL=postgresql://test:test@localhost:5433/postgres npm test`. The PWA suite
 arrived with a past task and starts with `foldChatEvents`, the chat
 transcript's event fold.
 

@@ -49,6 +49,7 @@ import { isResolved, openBlockers, orderChildren } from "../story.js";
 import JournalTimeline from "../components/JournalTimeline.vue";
 import ChecklistPanel from "../components/ChecklistPanel.vue";
 import { checkedCountLabel } from "../approve.js";
+import { reasoningEffortChip } from "../reasoning-effort.js";
 
 const props = defineProps<{ id: string }>();
 const router = useRouter();
@@ -707,6 +708,9 @@ function formatDate(iso: string): string {
             </v-chip>
             <v-chip v-if="task.autonomyLevel !== null" size="small" variant="tonal" prepend-icon="mdi-speedometer">
               autonomy {{ task.autonomyLevel }}
+            </v-chip>
+            <v-chip v-if="reasoningEffortChip(task)" size="small" variant="tonal" prepend-icon="mdi-brain">
+              reasoning effort {{ reasoningEffortChip(task) }}
             </v-chip>
             <v-chip v-for="label in task.labels" :key="label.id" size="small" :color="label.color ?? undefined">
               {{ label.name }}

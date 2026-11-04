@@ -8,6 +8,15 @@ publishes the container image `ghcr.io/rackmarten/pinboard` at that version.
 ## [Unreleased]
 
 ### Added
+- Per-task reasoning effort with a per-project default, for foreman to run a
+  task with `--effort`. Tasks take `reasoningEffort` and projects
+  `defaultReasoningEffort` (`medium`, `high` or `null`, anything else is a
+  400) on create and `PATCH`, and task reads return
+  `effectiveReasoningEffort` (the task's own value, else the project's
+  default). The PWA has a "Reasoning effort" select in the task form, shown
+  on the task page (an inherited value reads "high (project)"), and a
+  "Default reasoning effort" in the project form. Independent of the
+  story-point effort: readiness, cost estimates and the governor ignore it.
 - Playtest review mode, a per-project `reviewMode` (`standard` by default,
   or `playtest`) for projects whose review means playing a build. In a
   playtest project a task can start while its one unmerged dependency is

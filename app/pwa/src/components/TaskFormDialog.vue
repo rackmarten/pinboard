@@ -19,6 +19,12 @@ import {
   type Task,
   type TaskDetail,
 } from "../api.js";
+import {
+  fromReasoningEffortField,
+  reasoningEffortItems,
+  toReasoningEffortField,
+  type ReasoningEffortField,
+} from "../reasoning-effort.js";
 import DescriptionEditor from "./DescriptionEditor.vue";
 
 const props = defineProps<{
@@ -48,6 +54,7 @@ const status = ref<string>("idea");
 const executorMode = ref<string>("human");
 const priority = ref(0);
 const estimatedEffort = ref<number | null>(null);
+const reasoningEffort = ref<ReasoningEffortField>("inherit");
 const autonomyLevel = ref<number | null>(null);
 const relatedProjectIds = ref<number[]>([]);
 // CTIDs, only shown once the task carries the root-access label.
@@ -60,6 +67,12 @@ const error = ref<string | null>(null);
 // not a repo path string - excludes this task's own project, which is
 // already implied.
 const relatedProjectOptions = computed(() => props.projects.filter((p) => p.id !== projectId.value));
+
+// "Inherit" names what the task would get from its project right now.
+const reasoningEffortOptions = computed(() => {
+  const inherited = props.projects.find((p) => p.id === projectId.value)?.defaultReasoningEffort;
+  return reasoningEffortItems(inherited ? `Inherit (project: ${inherited})` : "Inherit");
+});
 
 // I10: label assignment - existing labels can be picked, or a new name
 // typed in and created on save (combobox allows values with no matching item).
@@ -80,6 +93,7 @@ function reset(): void {
   executorMode.value = t?.executorMode ?? "human";
   priority.value = t?.priority ?? 0;
   estimatedEffort.value = t?.estimatedEffort ?? null;
+  reasoningEffort.value = toReasoningEffortField(t?.reasoningEffort);
   autonomyLevel.value = t?.autonomyLevel ?? null;
   relatedProjectIds.value = t?.relatedProjectIds ?? [];
   rootScope.value = (t?.rootScope ?? []).map(String);
@@ -145,6 +159,7 @@ async function save(force = false): Promise<void> {
     executorMode: executorMode.value,
     priority: priority.value,
     estimatedEffort: estimatedEffort.value,
+    reasoningEffort: fromReasoningEffortField(reasoningEffort.value),
     autonomyLevel: autonomyLevel.value,
     relatedProjectIds: relatedProjectIds.value,
     rootScope: rootScope.value.map((v) => Number(String(v).trim())),
@@ -204,6 +219,14 @@ async function save(force = false): Promise<void> {
             item-title="title"
             item-value="value"
             clearable
+            density="comfortable"
+          />
+          <v-select
+            v-model="reasoningEffort"
+            label="Reasoning effort"
+            :items="reasoningEffortOptions"
+            item-title="title"
+            item-value="value"
             density="comfortable"
           />
         </div>
