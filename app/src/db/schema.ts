@@ -76,6 +76,10 @@ export const projects = pgTable("projects", {
   // REVIEW_MODES). In a playtest project a task may start stacked on one
   // dependency that is still in review - see dependencyGate().
   reviewMode: text("review_mode").notNull().default("standard"),
+  // the reasoning effort foreman runs this project's tasks with when a task
+  // sets none of its own (see tasks.reasoningEffort). Null keeps foreman's
+  // default. Same values as chat_threads.effort.
+  defaultReasoningEffort: text("default_reasoning_effort"), // "medium" | "high" | null
   // I10: soft-archive instead of delete - an archived project keeps its
   // tasks/history but drops out of the default project list/picker.
   archived: boolean("archived").notNull().default(false),
@@ -116,6 +120,11 @@ export const tasks = pgTable("tasks", {
   // Constrained at the API layer, not the DB, so the set can grow without a
   // migration - see PLAN.md's I0 carry-forward note on constraining this.
   estimatedEffort: integer("estimated_effort"),
+  // reasoning-effort hint for foreman's `claude -p` run of this task,
+  // independent of estimatedEffort above (which sizes the work, not how hard
+  // the model thinks). Null inherits the project's defaultReasoningEffort;
+  // the API returns the resolved value as effectiveReasoningEffort.
+  reasoningEffort: text("reasoning_effort"), // "medium" | "high" | null
   actualCostUsd: text("actual_cost_usd"),
   actualDurationMs: integer("actual_duration_ms"),
   // Set by foreman's agent runner (I4a) while a `claude -p` session is

@@ -120,6 +120,20 @@ export function isReviewMode(value: unknown): value is ReviewMode {
   return typeof value === "string" && (REVIEW_MODES as readonly string[]).includes(value);
 }
 
+// a task's reasoning effort for foreman's run: its own setting, else its
+// project's default, else null (foreman's default). Same values as a chat
+// thread's effort.
+export const REASONING_EFFORTS = ["medium", "high"] as const;
+export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
+
+export function isReasoningEffort(value: unknown): value is ReasoningEffort {
+  return typeof value === "string" && (REASONING_EFFORTS as readonly string[]).includes(value);
+}
+
+export function effectiveReasoningEffort(taskEffort: string | null, projectDefault: string | null | undefined): string | null {
+  return taskEffort ?? projectDefault ?? null;
+}
+
 export interface DependencyTarget {
   taskId: number;
   status: string;
