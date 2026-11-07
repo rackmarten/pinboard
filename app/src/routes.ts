@@ -29,7 +29,7 @@ import { getCostRollup, getUsageSummary, InteractiveDedupe, licenseIdForLinuxUse
 import { normalizeTaskEnums, parentMap, storyShouldComplete, isTerminalStatus, dependencySatisfied, isReviewMode, REVIEW_MODES, isReasoningEffort, REASONING_EFFORTS, effectiveReasoningEffort } from "./task-model.js";
 import { mergeBlockers, reworkStackedDependents, stackOnFor } from "./dependencies.js";
 import { readinessApplies, readinessFailures, toWorkspaceRepos, type ReadinessTask, type WorkspaceRepo } from "./readiness.js";
-import { listJournal, recordEvent as recordJournalEvent, unreadNotificationCount } from "./journal.js";
+import { listJournal, parseJournalQuery, recordEvent as recordJournalEvent, unreadNotificationCount } from "./journal.js";
 import { pushConfigured, sendTestPush } from "./push.js";
 import { config } from "./config.js";
 import { asksForTask } from "./asks.js";
@@ -424,12 +424,16 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   // the journal, newest first. taskId/projectId narrow it to one
   // task or project; beforeId pages backwards; types (comma list) narrows
-  // it to those event types.
+  // it to those event types; since/until (ISO) bound createdAt; to=<status>
+  // keeps only status transitions into that status (e.g. to=rework).
   app.get("/events", async (req) => {
-    const q = req.query as Record<string, string | undefined>;
-    const num = (v: string | undefined) => (v === undefined || v === "" ? undefined : Number(v));
-    const eventTypes = q.types ? q.types.split(",").filter(Boolean) : undefined;
-    return listJournal({ taskId: num(q.taskId), projectId: num(q.projectId), beforeId: num(q.beforeId), limit: num(q.limit), eventTypes });
+    let query;
+    try {
+      query = parseJournalQuery(req.query as Record<string, string | undefined>);
+    } catch (err) {
+      throw badRequest((err as Error).message);
+    }
+    return listJournal(query);
   });
 
   // scripts/backup.sh reports each run here, so a failed nightly

@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, lt, sql } from "drizzle-orm";
 import { db } from "./db/client.js";
 import { notifications, projects, taskEvents, tasks } from "./db/schema.js";
 import { deriveNotification } from "./notifications.js";
@@ -61,6 +61,44 @@ export interface JournalQuery {
   limit?: number;
   // only these event types (the releases view's History).
   eventTypes?: string[];
+  // createdAt window, since inclusive, until exclusive.
+  since?: Date;
+  until?: Date;
+  // only status transitions into this status. Both the "status" (PATCH) and
+  // "pipeline" (foreman's handbacks) events carry it as payload.to.
+  toStatus?: string;
+}
+
+// Status changes are journaled under these two event types.
+export const TRANSITION_EVENT_TYPES = ["status", "pipeline"];
+
+function num(v: string | undefined): number | undefined {
+  return v === undefined || v === "" ? undefined : Number(v);
+}
+
+function date(v: string | undefined, name: string): Date | undefined {
+  if (v === undefined || v === "") return undefined;
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) throw new Error(`${name} must be an ISO date`);
+  return d;
+}
+
+// GET /events query string -> JournalQuery. Throws on a malformed date, so the
+// route answers 400 rather than silently ignoring the window.
+export function parseJournalQuery(q: Record<string, string | undefined>): JournalQuery {
+  const toStatus = q.to || undefined;
+  let eventTypes = q.types ? q.types.split(",").filter(Boolean) : undefined;
+  if (toStatus && !eventTypes) eventTypes = TRANSITION_EVENT_TYPES;
+  return {
+    taskId: num(q.taskId),
+    projectId: num(q.projectId),
+    beforeId: num(q.beforeId),
+    limit: num(q.limit),
+    eventTypes,
+    since: date(q.since, "since"),
+    until: date(q.until, "until"),
+    toStatus,
+  };
 }
 
 // Newest first, keyset-paginated on id (ids are monotonic with createdAt,
@@ -72,6 +110,9 @@ export async function listJournal(q: JournalQuery) {
   if (q.projectId !== undefined) where.push(eq(taskEvents.projectId, q.projectId));
   if (q.beforeId !== undefined) where.push(lt(taskEvents.id, q.beforeId));
   if (q.eventTypes?.length) where.push(inArray(taskEvents.eventType, q.eventTypes));
+  if (q.since !== undefined) where.push(gte(taskEvents.createdAt, q.since));
+  if (q.until !== undefined) where.push(lt(taskEvents.createdAt, q.until));
+  if (q.toStatus !== undefined) where.push(sql`${taskEvents.payload}->>'to' = ${q.toStatus}`);
   return db
     .select({
       id: taskEvents.id,
