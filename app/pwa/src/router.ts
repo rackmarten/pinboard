@@ -67,3 +67,10 @@ export function installInAppLinks(r: Router): void {
     void r.push(url.pathname + url.search + url.hash);
   });
 }
+
+// The matched route's pattern ("/tasks/:id"), so activity is counted per
+// screen rather than per task.
+export function trackedRoute(r: Router): string {
+  const route = r.currentRoute.value;
+  return route.matched[route.matched.length - 1]?.path ?? route.path;
+}

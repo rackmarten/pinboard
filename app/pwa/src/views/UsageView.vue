@@ -10,6 +10,7 @@ import {
   type UsageSummary,
   type WeeklyResetSetting,
 } from "../api.js";
+import MyTimePanel from "../components/MyTimePanel.vue";
 
 const summary = ref<UsageSummary | null>(null);
 const rollup = ref<CostRollup | null>(null);
@@ -17,6 +18,8 @@ const resetSetting = ref<WeeklyResetSetting | null>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);
 const view = ref<"chart" | "table">("chart");
+// "spend" is the cost view below; "my-time" is the operator's own activity.
+const tab = ref<"spend" | "my-time">("spend");
 const sendingDigest = ref(false);
 const digestResult = ref<string | null>(null);
 const savingSetting = ref(false);
@@ -132,7 +135,7 @@ async function triggerDigest(): Promise<void> {
   <div class="d-flex flex-column ga-4">
     <div class="d-flex align-center justify-space-between flex-wrap ga-2">
       <h1 class="text-h5">Usage</h1>
-      <div class="d-flex align-center ga-2">
+      <div v-if="tab === 'spend'" class="d-flex align-center ga-2">
         <v-btn size="small" variant="tonal" :loading="sendingDigest" @click="triggerDigest">
           Send digest now
         </v-btn>
@@ -143,157 +146,166 @@ async function triggerDigest(): Promise<void> {
       </div>
     </div>
 
-    <v-alert v-if="digestResult" type="info" density="compact" variant="tonal" closable @click:close="digestResult = null">
-      {{ digestResult }}
-    </v-alert>
-    <v-alert v-if="error" type="error" density="compact" variant="tonal">{{ error }}</v-alert>
-    <v-progress-linear v-if="loading" indeterminate />
+    <v-tabs v-model="tab" density="compact" color="primary">
+      <v-tab value="spend">Spend</v-tab>
+      <v-tab value="my-time" data-track="my-time-tab">My time</v-tab>
+    </v-tabs>
 
-    <template v-if="summary">
-      <div class="d-flex flex-wrap ga-3">
-        <v-card class="stat-tile" variant="tonal">
-          <v-card-text>
-            <div class="text-caption text-medium-emphasis">Today</div>
-            <div class="text-h4">{{ formatUsd(summary.todayUsd) }}</div>
-            <div class="text-caption text-medium-emphasis">agents, + {{ formatUsd(summary.interactive.todayUsd) }} interactive</div>
-          </v-card-text>
-        </v-card>
-        <v-card class="stat-tile" variant="tonal">
-          <v-card-text>
-            <div class="text-caption text-medium-emphasis">Since reset ({{ shortDay(summary.resetStart.slice(0, 10)) }})</div>
-            <div class="text-h4">{{ formatUsd(summary.sinceResetUsd) }}</div>
-            <div class="text-caption text-medium-emphasis">agents, + {{ formatUsd(summary.interactive.sinceResetUsd) }} interactive</div>
-          </v-card-text>
-        </v-card>
-        <v-card class="stat-tile" variant="tonal">
-          <v-card-text>
-            <div class="text-caption text-medium-emphasis">This month</div>
-            <div class="text-h4">{{ formatUsd(summary.monthUsd) }}</div>
-            <div class="text-caption text-medium-emphasis">agents, + {{ formatUsd(summary.interactive.monthUsd) }} interactive</div>
-          </v-card-text>
-        </v-card>
-      </div>
+    <MyTimePanel v-if="tab === 'my-time'" />
 
-      <v-card v-if="view === 'chart'">
-        <v-card-item>
-          <template #title>Daily cost, last 30 days</template>
-        </v-card-item>
-        <v-card-text>
-          <div class="bar-chart">
-            <div v-for="d in summary.daily" :key="d.day" class="bar-col">
-              <div class="bar-track">
-                <div class="bar" :style="{ height: barHeightPct(d.costUsd) + '%' }" tabindex="0">
-                  <v-tooltip activator="parent" location="top">
-                    {{ shortDay(d.day) }}: {{ formatUsd(d.costUsd) }} ({{ d.count }} session{{ d.count === 1 ? "" : "s" }})
-                  </v-tooltip>
+    <template v-else>
+      <v-alert v-if="digestResult" type="info" density="compact" variant="tonal" closable @click:close="digestResult = null">
+        {{ digestResult }}
+      </v-alert>
+      <v-alert v-if="error" type="error" density="compact" variant="tonal">{{ error }}</v-alert>
+      <v-progress-linear v-if="loading" indeterminate />
+
+      <template v-if="summary">
+        <div class="d-flex flex-wrap ga-3">
+          <v-card class="stat-tile" variant="tonal">
+            <v-card-text>
+              <div class="text-caption text-medium-emphasis">Today</div>
+              <div class="text-h4">{{ formatUsd(summary.todayUsd) }}</div>
+              <div class="text-caption text-medium-emphasis">agents, + {{ formatUsd(summary.interactive.todayUsd) }} interactive</div>
+            </v-card-text>
+          </v-card>
+          <v-card class="stat-tile" variant="tonal">
+            <v-card-text>
+              <div class="text-caption text-medium-emphasis">Since reset ({{ shortDay(summary.resetStart.slice(0, 10)) }})</div>
+              <div class="text-h4">{{ formatUsd(summary.sinceResetUsd) }}</div>
+              <div class="text-caption text-medium-emphasis">agents, + {{ formatUsd(summary.interactive.sinceResetUsd) }} interactive</div>
+            </v-card-text>
+          </v-card>
+          <v-card class="stat-tile" variant="tonal">
+            <v-card-text>
+              <div class="text-caption text-medium-emphasis">This month</div>
+              <div class="text-h4">{{ formatUsd(summary.monthUsd) }}</div>
+              <div class="text-caption text-medium-emphasis">agents, + {{ formatUsd(summary.interactive.monthUsd) }} interactive</div>
+            </v-card-text>
+          </v-card>
+        </div>
+
+        <v-card v-if="view === 'chart'">
+          <v-card-item>
+            <template #title>Daily cost, last 30 days</template>
+          </v-card-item>
+          <v-card-text>
+            <div class="bar-chart">
+              <div v-for="d in summary.daily" :key="d.day" class="bar-col">
+                <div class="bar-track">
+                  <div class="bar" :style="{ height: barHeightPct(d.costUsd) + '%' }" tabindex="0">
+                    <v-tooltip activator="parent" location="top">
+                      {{ shortDay(d.day) }}: {{ formatUsd(d.costUsd) }} ({{ d.count }} session{{ d.count === 1 ? "" : "s" }})
+                    </v-tooltip>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-          <div class="d-flex justify-space-between text-caption text-medium-emphasis mt-1">
-            <span>{{ shortDay(summary.daily[0]?.day ?? "") }}</span>
-            <span>{{ shortDay(summary.daily[summary.daily.length - 1]?.day ?? "") }}</span>
-          </div>
-        </v-card-text>
-      </v-card>
+            <div class="d-flex justify-space-between text-caption text-medium-emphasis mt-1">
+              <span>{{ shortDay(summary.daily[0]?.day ?? "") }}</span>
+              <span>{{ shortDay(summary.daily[summary.daily.length - 1]?.day ?? "") }}</span>
+            </div>
+          </v-card-text>
+        </v-card>
 
-      <template v-else>
-        <v-table v-if="activeDays.length" density="compact">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th class="text-right">Cost</th>
-              <th class="text-right">Sessions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="d in activeDays" :key="d.day">
-              <td>{{ d.day }}</td>
-              <td class="text-right tabular-nums">{{ formatUsd(d.costUsd) }}</td>
-              <td class="text-right tabular-nums">{{ d.count }}</td>
-            </tr>
-          </tbody>
-        </v-table>
-        <v-empty-state v-else icon="mdi-currency-usd-off" title="No sessions in the last 30 days" />
-      </template>
-
-      <v-card>
-        <v-card-item>
-          <template #title>Cost by project</template>
-          <template #subtitle>
-            Rolled-up total includes each project's own tasks plus every child project's spend
-          </template>
-        </v-card-item>
-        <v-table density="compact">
-          <thead>
-            <tr>
-              <th>Project</th>
-              <th class="text-right">Since reset</th>
-              <th class="text-right">All-time (own)</th>
-              <th class="text-right">All-time (rolled up)</th>
-            </tr>
-          </thead>
-          <tbody>
-            <template v-for="{ project, depth } in orderedProjects" :key="project.projectId">
+        <template v-else>
+          <v-table v-if="activeDays.length" density="compact">
+            <thead>
               <tr>
-                <td>
-                  <v-btn
-                    v-if="(tasksByProject.get(project.projectId)?.length ?? 0) > 0"
-                    :icon="expandedProjects.has(project.projectId) ? 'mdi-chevron-down' : 'mdi-chevron-right'"
-                    size="x-small"
-                    variant="text"
-                    density="compact"
-                    :style="{ marginLeft: depth * 20 + 'px' }"
-                    @click="toggleProject(project.projectId)"
-                  />
-                  <span v-else :style="{ marginLeft: depth * 20 + 24 + 'px' }" />
-                  {{ project.name }}
-                </td>
-                <td class="text-right tabular-nums">{{ formatUsd(project.rolledUpSinceResetCostUsd) }}</td>
-                <td class="text-right tabular-nums">{{ formatUsd(project.ownCostUsd) }}</td>
-                <td class="text-right tabular-nums">{{ formatUsd(project.rolledUpCostUsd) }}</td>
+                <th>Date</th>
+                <th class="text-right">Cost</th>
+                <th class="text-right">Sessions</th>
               </tr>
-              <template v-if="expandedProjects.has(project.projectId)">
-                <tr v-for="t in tasksByProject.get(project.projectId)" :key="t.taskId">
-                  <td class="text-medium-emphasis" :style="{ paddingLeft: (depth + 1) * 20 + 24 + 'px' }">
-                    #{{ t.taskId }} {{ t.title }}
-                  </td>
-                  <td class="text-right tabular-nums text-medium-emphasis">{{ formatUsd(t.sinceResetCostUsd) }}</td>
-                  <td class="text-right tabular-nums text-medium-emphasis">{{ formatUsd(t.totalCostUsd) }}</td>
-                  <td class="text-right tabular-nums text-medium-emphasis">-</td>
-                </tr>
-              </template>
-            </template>
-          </tbody>
-        </v-table>
-        <v-empty-state v-if="!orderedProjects.length" icon="mdi-folder-outline" title="No projects yet" />
-      </v-card>
+            </thead>
+            <tbody>
+              <tr v-for="d in activeDays" :key="d.day">
+                <td>{{ d.day }}</td>
+                <td class="text-right tabular-nums">{{ formatUsd(d.costUsd) }}</td>
+                <td class="text-right tabular-nums">{{ d.count }}</td>
+              </tr>
+            </tbody>
+          </v-table>
+          <v-empty-state v-else icon="mdi-currency-usd-off" title="No sessions in the last 30 days" />
+        </template>
 
-      <v-card>
-        <v-card-item>
-          <template #title>Weekly reset</template>
-          <template #subtitle>When your plan allowance resets - used to scope "since reset" above</template>
-        </v-card-item>
-        <v-card-text v-if="resetSetting" class="d-flex align-center ga-3 flex-wrap">
-          <v-select
-            v-model="resetSetting.dayOfWeek"
-            :items="DAY_NAMES.map((name, value) => ({ title: name, value }))"
-            label="Day"
-            density="compact"
-            hide-details
-            style="max-width: 180px"
-          />
-          <v-select
-            v-model="resetSetting.hour"
-            :items="Array.from({ length: 24 }, (_, h) => ({ title: `${h}:00`, value: h }))"
-            label="Hour (server-local time)"
-            density="compact"
-            hide-details
-            style="max-width: 220px"
-          />
-          <v-btn size="small" color="primary" :loading="savingSetting" @click="saveResetSetting">Save</v-btn>
-        </v-card-text>
-      </v-card>
+        <v-card>
+          <v-card-item>
+            <template #title>Cost by project</template>
+            <template #subtitle>
+              Rolled-up total includes each project's own tasks plus every child project's spend
+            </template>
+          </v-card-item>
+          <v-table density="compact">
+            <thead>
+              <tr>
+                <th>Project</th>
+                <th class="text-right">Since reset</th>
+                <th class="text-right">All-time (own)</th>
+                <th class="text-right">All-time (rolled up)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template v-for="{ project, depth } in orderedProjects" :key="project.projectId">
+                <tr>
+                  <td>
+                    <v-btn
+                      v-if="(tasksByProject.get(project.projectId)?.length ?? 0) > 0"
+                      :icon="expandedProjects.has(project.projectId) ? 'mdi-chevron-down' : 'mdi-chevron-right'"
+                      size="x-small"
+                      variant="text"
+                      density="compact"
+                      :style="{ marginLeft: depth * 20 + 'px' }"
+                      @click="toggleProject(project.projectId)"
+                    />
+                    <span v-else :style="{ marginLeft: depth * 20 + 24 + 'px' }" />
+                    {{ project.name }}
+                  </td>
+                  <td class="text-right tabular-nums">{{ formatUsd(project.rolledUpSinceResetCostUsd) }}</td>
+                  <td class="text-right tabular-nums">{{ formatUsd(project.ownCostUsd) }}</td>
+                  <td class="text-right tabular-nums">{{ formatUsd(project.rolledUpCostUsd) }}</td>
+                </tr>
+                <template v-if="expandedProjects.has(project.projectId)">
+                  <tr v-for="t in tasksByProject.get(project.projectId)" :key="t.taskId">
+                    <td class="text-medium-emphasis" :style="{ paddingLeft: (depth + 1) * 20 + 24 + 'px' }">
+                      #{{ t.taskId }} {{ t.title }}
+                    </td>
+                    <td class="text-right tabular-nums text-medium-emphasis">{{ formatUsd(t.sinceResetCostUsd) }}</td>
+                    <td class="text-right tabular-nums text-medium-emphasis">{{ formatUsd(t.totalCostUsd) }}</td>
+                    <td class="text-right tabular-nums text-medium-emphasis">-</td>
+                  </tr>
+                </template>
+              </template>
+            </tbody>
+          </v-table>
+          <v-empty-state v-if="!orderedProjects.length" icon="mdi-folder-outline" title="No projects yet" />
+        </v-card>
+
+        <v-card>
+          <v-card-item>
+            <template #title>Weekly reset</template>
+            <template #subtitle>When your plan allowance resets - used to scope "since reset" above</template>
+          </v-card-item>
+          <v-card-text v-if="resetSetting" class="d-flex align-center ga-3 flex-wrap">
+            <v-select
+              v-model="resetSetting.dayOfWeek"
+              :items="DAY_NAMES.map((name, value) => ({ title: name, value }))"
+              label="Day"
+              density="compact"
+              hide-details
+              style="max-width: 180px"
+            />
+            <v-select
+              v-model="resetSetting.hour"
+              :items="Array.from({ length: 24 }, (_, h) => ({ title: `${h}:00`, value: h }))"
+              label="Hour (server-local time)"
+              density="compact"
+              hide-details
+              style="max-width: 220px"
+            />
+            <v-btn size="small" color="primary" :loading="savingSetting" @click="saveResetSetting">Save</v-btn>
+          </v-card-text>
+        </v-card>
+      </template>
     </template>
   </div>
 </template>

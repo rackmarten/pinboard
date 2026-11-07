@@ -650,6 +650,53 @@ export function getCostRollup(): Promise<CostRollup> {
   return api("/usage/rollup");
 }
 
+// the operator's own activity (see activity-tracker.ts) and the
+// waiting-on-a-human figures, for the Usage view's "My time" tab.
+export interface MySettings {
+  actor: string;
+  usageTracking: boolean;
+}
+
+export function getMySettings(): Promise<MySettings> {
+  return api("/me/settings");
+}
+
+export function updateMySettings(usageTracking: boolean): Promise<MySettings> {
+  return api("/me/settings", { method: "PUT", body: JSON.stringify({ usageTracking }) });
+}
+
+export interface WaitStat {
+  count: number;
+  medianHours: number | null;
+  meanHours: number | null;
+  totalHours: number;
+}
+
+export interface WaitingWeek {
+  weekStart: string;
+  asks: WaitStat;
+  review: WaitStat;
+  defined: WaitStat;
+  humanQueued: WaitStat;
+}
+
+export interface MyTime {
+  actor: string;
+  usageTracking: boolean;
+  days: number;
+  activity: {
+    totalActiveMinutes: number;
+    daily: { day: string; activeMinutes: number }[];
+    modules: { route: string; module: string; activeMinutes: number }[];
+    features: { feature: string; clicks: number }[];
+  };
+  waiting: WaitingWeek[];
+}
+
+export function getMyTime(days = 30, weeks = 8): Promise<MyTime> {
+  return api(`/usage/my-time?days=${days}&weeks=${weeks}`);
+}
+
 export interface WeeklyResetSetting {
   dayOfWeek: number; // 0=Sunday..6=Saturday
   hour: number; // 0-23, server-local time
