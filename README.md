@@ -113,6 +113,7 @@ Optional integrations, each off until its variables are set (startup logs one
 | Daily digest mail | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `DIGEST_TO` (default: the SMTP account), `DIGEST_HOUR` |
 | Phone push via [ntfy](https://ntfy.sh) | `NTFY_URL`, `NTFY_TOKEN_PINBOARD`, `NTFY_TOPIC`, `PUSH_QUIET_START`/`END`, `PUSH_DIGEST_AT`, `PUSH_TIME_ZONE` |
 | Reverse-proxy root grants | `PINBOARD_PROXY_SECRET` |
+| Per-person identity behind a reverse proxy | `PINBOARD_PROXY_SECRET`, `PINBOARD_USER_HEADER` |
 
 There is no login screen: pinboard trusts its network. Keep it on a private
 network or behind an authenticating reverse proxy, never directly on the
@@ -153,7 +154,7 @@ the root. Old root API calls are no longer aliased.
 | `GET /tasks/:id/root-grant` | Root grant state: `{ active, ctids, expiresAt, grantedAt, grantedBy }`. What a root proxy asks before every call |
 | `POST /tasks/:id/root-grant` | Operator only (see "Root access"): `{ ttlHours? }` (default 4, max 24) grants the task's `rootScope` and queues it |
 | `DELETE /tasks/:id/root-grant` | Revoke a grant now. Open to anyone |
-| `GET /events?taskId=&projectId=&beforeId=&limit=&types=` | The journal: every task, project, chat and config change, newest first, keyset-paged by `beforeId`. Writes with no explicit `actorType`/`actorName` are attributed from `x-pinboard-actor: <type>:<name>`, else `x-pinboard-client: pwa` (human/operator), else `system/api`. Payloads older than 3 months are pruned nightly at 03:00; the rows stay |
+| `GET /events?taskId=&projectId=&beforeId=&limit=&types=` | The journal: every task, project, chat and config change, newest first, keyset-paged by `beforeId`. Writes with no explicit `actorType`/`actorName` are attributed from `x-pinboard-actor: <type>:<name>`, else `x-pinboard-client: pwa` (human/operator, or human/`<user>` behind a proxy that names people, see "Operator time tracking"), else `system/api`. Payloads older than 3 months are pruned nightly at 03:00; the rows stay |
 | `GET /releases` | Releases view: every project with probed deploy targets, each target's deployed and default-branch sha, pending count and commits, and the project's latest Deploy-now request |
 | `PUT /releases/targets/:projectId` | foreman's probe replaces a project's targets: `{ targets: [{ host, app, deployedSha, mainSha, pendingCount, pendingCommits, probeError, release?, deployedVersion? }] }` |
 | `POST /releases/deploys` | One `deploy-service.sh` step finished: `{ repo, host, app?, sha?, outcome: succeeded\|failed, taskId?, requestId?, durationMs? }`, journaled as `deploy` |
@@ -196,6 +197,9 @@ the root. Old root API calls are no longer aliased.
 | `GET /plan/next?licenseId=&override=` | The dispatcher-facing slice: which task(s) may start right now, or a `waitUntil` when the session window is spent but not expired (sleep rather than re-poll). `override=true` skips the budget gates only. `licenseId` defaults to the `default` license when omitted; foreman's dispatcher asks once per enabled license since a past task. `concurrency` is the asking seat's own limit, `concurrencyGlobal` the cross-seat cap and `seatRunning` what that seat already holds - both caps apply (#155) |
 | `GET /plan/gate/:taskId?licenseId=&override=` | Whether one specific task may start now - what `work task run <id>` asks, as opposed to `/plan/next`'s "pick me something". Same rules, evaluated with that task as the sole candidate. Same `licenseId` default as `/plan/next`. also returns `budgetUsd`, the `--max-budget-usd` that run may spend, sized from that task's own cost estimate (2x the estimate, floored at $2 and capped at $26 - see `cost-model.ts`'s `runBudgetForEstimate`). also floored at $2 per `estimatedEffort` point (effort 3 gets $6, effort 5 gets $10, effort 8 gets $16, capped at $26), since the estimate is the project mean and would otherwise give every task about $2 (`runBudgetForTask`). A task with no effort keeps the estimate-only budget. Present on refusals too, so a caller never needs a fallback constant |
 | `POST /usage` | Spend reported by an interactive Claude Code session (e.g. a session-end hook) - body `{costUsd (> 0), source: "interactive", linuxUser, sessionId}`. `linuxUser` picks the license whose `linuxUser` matches (unknown user: 400). Returns `201 {id}`; the same `(sessionId, costUsd)` posted again within a minute is not stored twice and returns `200 {id, duplicate: true}` (kept in memory, so a restart inside that minute can let one duplicate through). Recorded, not gated: it counts toward the governor's calibration and shows separately in the usage view (`GET /usage/summary`'s `interactive`), but never toward the period or session spend `GET /plan` reports and dispatch gates on |
+| `GET /me/settings` / `PUT /me/settings` | The requesting operator's own settings, `{actor, usageTracking}`; `PUT` takes `{usageTracking: boolean}`. Only a person (a PWA request) has settings: anyone else reads `false` and gets 403 on `PUT`. See "Operator time tracking" |
+| `POST /activity` | The PWA activity tracker's flush, `{entries: [{kind: "active"\|"click", minute, route, name, value}]}` (at most 1000; `active` value is seconds, 1-60; entries more than 7 days old or 5 minutes ahead are dropped). Always `204`; nothing is stored unless the requesting operator opted in. `?client=pwa` stands in for the header, since `sendBeacon` cannot set one |
+| `GET /usage/my-time?days=30&weeks=8` | The "My time" tab: the requesting operator's active minutes per day, top modules by active time and top features by clicks, plus everyone's waiting-on-a-human figures per week (`waiting[]`: `asks`, `review`, `defined`, `humanQueued`, each `{count, medianHours, meanHours, totalHours}`) |
 | `POST /plan/session-limit` | record where Claude said the 5h session window actually resets - body `{resetsAt, licenseId?, taskId?, rawError?}`. foreman posts this after parsing `You've hit your session limit - resets <time> (UTC)` out of a failed run. This is the only ground truth pinboard gets about the boundary; everything else is inferred from spend |
 | `POST /plan/session-reset` | Body `{licenseId?}`. Forget the seat's derived session spend and any session-limit report made before now, so dispatch can resume when pinboard's estimate is wrong. Returns the license |
 | `GET /plan/session-limit?licenseId=` | The currently-live reported reset for a license, or `null` once it has passed. Diagnostic - the plan already folds it in - but it answers "why is the dispatcher asleep?" in one call |
@@ -331,6 +335,42 @@ Nothing drives any of this yet - foreman's poller is #154's increment 2, and
 the handbacks that resume an agent are increment 3. Until then this pinboard
 simply never sees a task in a pipeline status.
 
+
+### Operator time tracking
+
+The Usage view's "My time" tab shows how an operator spends time in
+pinboard and how long work waits on a person. It is **opt-in per operator
+and off by default**: a fresh install records nothing about anyone. Turn it
+on with the switch on that tab (or `PUT /api/me/settings
+{"usageTracking": true}` with `x-pinboard-client: pwa`).
+
+While it is on, the PWA records, per minute:
+
+- **Active time** per route (`/tasks/:id`, not the task) and module (the
+  closest `data-module` panel around what was last touched, else the
+  route's own name). Active means the tab is visible, the window has focus,
+  and there was mouse, keyboard, touch or scroll input in the last 30
+  seconds.
+- **Clicks** on primary actions marked `data-track="<feature>"` (queue,
+  approve, reject, veto, answer, comment, deploy now, ...). Nothing about
+  what was clicked on (no task ids, no text).
+
+Counts are batched in the browser and sent every minute and when the page
+is hidden. Raw events (`activity_events`) are deleted after 90 days by the
+nightly 03:00 job; per-minute totals (`activity_minutes`) are kept.
+
+"Operator" is the identity the journal uses for the request. Without a
+login, every browser is the same `human:operator`. Behind a reverse proxy
+that knows who is calling, set `PINBOARD_USER_HEADER` to the header it puts
+the person's user id in; pinboard trusts that header only on requests that
+also carry `PINBOARD_PROXY_SECRET`, and then each person has their own
+setting, their own numbers and their own name in the journal.
+
+The "waiting on a human" table records nothing new: it is derived from the
+journal and asks, per week the wait ended: how long questions took to be
+answered, how long tasks sat in `review`, how long `defined` agent tasks
+waited to be queued, and how long human-executor tasks sat in `queued`.
+Journal payloads are pruned after three months, so older weeks read empty.
 
 ## Local development
 

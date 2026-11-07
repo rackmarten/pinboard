@@ -8,6 +8,20 @@ publishes the container image `ghcr.io/rackmarten/pinboard` at that version.
 ## [Unreleased]
 
 ### Added
+- Operator time tracking, opt-in per operator and off by default. While on,
+  the PWA counts active time (tab visible, window focused, input in the last
+  30 seconds) per route and module, and clicks on primary actions marked
+  `data-track`, and flushes them every minute and on page hide to
+  `POST /activity`. Raw events are kept 90 days, per-minute totals
+  indefinitely. A new "My time" tab on the Usage view shows active minutes
+  per day, top modules and features, and week-over-week "waiting on a human"
+  figures derived from the journal and asks (questions answered, time in
+  review, `defined` agent tasks waiting to be queued, human tasks sitting
+  queued). New routes `GET`/`PUT /me/settings` and `GET /usage/my-time`.
+- `PINBOARD_USER_HEADER`: behind a reverse proxy that sends
+  `PINBOARD_PROXY_SECRET`, a header naming the calling person, so each
+  operator gets their own journal name and tracking setting instead of the
+  shared `human:operator`.
 - Per-task reasoning effort with a per-project default, for foreman to run a
   task with `--effort`. Tasks take `reasoningEffort` and projects
   `defaultReasoningEffort` (`medium`, `high` or `null`, anything else is a

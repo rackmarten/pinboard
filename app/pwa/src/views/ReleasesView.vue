@@ -179,6 +179,7 @@ const REQUEST_COLORS: Record<string, string> = { queued: "info", running: "info"
             prepend-icon="mdi-rocket-launch-outline"
             :loading="busy === p.id || isActive(p.lastRequest)"
             :disabled="isActive(p.lastRequest) || deployTargetsOf(p).length === 0"
+            data-track="deploy-now"
             @click="deploy(p)"
           >
             Deploy now
@@ -208,7 +209,7 @@ const REQUEST_COLORS: Record<string, string> = { queued: "info", running: "info"
                   </template>
                   <v-list density="compact">
                     <v-list-subheader>Release {{ t.deployedVersion ?? "" }} to {{ t.host }} as</v-list-subheader>
-                    <v-list-item v-for="b in BUMPS" :key="b" @click="release(p, b)">
+                    <v-list-item v-for="b in BUMPS" :key="b" data-track="release" @click="release(p, b)">
                       <v-list-item-title>{{ bumpedVersion(t.deployedVersion, b) ?? b }}</v-list-item-title>
                       <v-list-item-subtitle>{{ b }}</v-list-item-subtitle>
                     </v-list-item>

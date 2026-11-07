@@ -78,6 +78,7 @@ const text = ref("");
         prepend-icon="mdi-send"
         :loading="busy"
         :disabled="option === null && !text.trim()"
+        data-track="answer-ask"
         @click="emit('answer', { option, text })"
       >
         Answer

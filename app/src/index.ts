@@ -9,6 +9,7 @@ import { API_PREFIX, registerRoutes } from "./routes.js";
 import { registerReleaseRoutes } from "./releases-routes.js";
 import { registerAlertRoutes } from "./alerts.js";
 import { registerAskRoutes } from "./asks.js";
+import { pruneActivity, registerActivityRoutes } from "./activity.js";
 import { scheduleDailyAt } from "./schedule.js";
 import { runDailyDigest } from "./usage.js";
 import { pruneJournal } from "./journal.js";
@@ -35,6 +36,7 @@ await app.register(
     await registerReleaseRoutes(api);
     await registerAlertRoutes(api);
     await registerAskRoutes(api);
+    await registerActivityRoutes(api);
   },
   { prefix: API_PREFIX },
 );
@@ -51,10 +53,11 @@ scheduleDailyAt(config.digest.hour, async () => {
 });
 
 // journal payloads and read notifications older than the
-// retention window, once a night at 03:00.
+// retention window, and raw activity events past theirs, once a night at 03:00.
 scheduleDailyAt(3, async () => {
   const pruned = await pruneJournal();
   app.log.info(`journal pruned: ${pruned.payloads} payloads, ${pruned.notifications} notifications`);
+  app.log.info(`activity pruned: ${await pruneActivity()} raw events`);
 });
 
 app.listen({ port: config.port, host: "0.0.0.0" }, (err) => {
