@@ -513,6 +513,7 @@ function formatDate(iso: string): string {
               v-for="s in TASK_STATUSES"
               :key="s"
               :active="s === task.status"
+              :data-track="s === 'queued' ? 'queue' : 'set-status'"
               @click="setStatus(s)"
             >
               <v-list-item-title>{{ s }}</v-list-item-title>
@@ -587,7 +588,7 @@ function formatDate(iso: string): string {
             <div class="description-html" v-html="renderDescriptionHtml(latestHandoff.summary)" />
           </v-alert>
 
-          <v-card v-if="checklist.length" variant="outlined">
+          <v-card v-if="checklist.length" variant="outlined" data-module="checklist">
             <v-card-subtitle class="pt-3">Review checklist · {{ checkedCountLabel(checklist) }}</v-card-subtitle>
             <v-card-text>
               <ChecklistPanel v-model:items="checklist" :task-id="taskId" />
@@ -663,12 +664,12 @@ function formatDate(iso: string): string {
           <v-expansion-panels variant="accordion" class="order-4 order-md-0">
             <v-expansion-panel title="History">
               <v-expansion-panel-text>
-                <JournalTimeline :task-id="task.id" :show-task="false" :page-size="30" />
+                <JournalTimeline :task-id="task.id" :show-task="false" :page-size="30" data-module="history" />
               </v-expansion-panel-text>
             </v-expansion-panel>
           </v-expansion-panels>
 
-          <div class="d-flex flex-column ga-4 order-6 order-md-0">
+          <div class="d-flex flex-column ga-4 order-6 order-md-0" data-module="comments">
           <v-divider />
 
           <h2 class="text-h6">Comments</h2>
@@ -694,7 +695,7 @@ function formatDate(iso: string): string {
               auto-grow
               @keydown.enter.meta="submitComment"
             />
-            <v-btn icon="mdi-send" :loading="postingComment" @click="submitComment" />
+            <v-btn icon="mdi-send" :loading="postingComment" data-track="comment" @click="submitComment" />
           </div>
           </div>
         </v-col>
@@ -811,7 +812,7 @@ function formatDate(iso: string): string {
           <v-card-actions>
             <v-spacer />
             <v-btn variant="text" @click="showRootGrant = false">Cancel</v-btn>
-            <v-btn color="error" variant="flat" :loading="grantingRoot" @click="grantRoot">Grant root and queue</v-btn>
+            <v-btn color="error" variant="flat" :loading="grantingRoot" data-track="queue-root" @click="grantRoot">Grant root and queue</v-btn>
           </v-card-actions>
         </v-card>
       </v-dialog>

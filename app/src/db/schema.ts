@@ -863,3 +863,47 @@ export const taskAsks = pgTable(
   },
   (table) => [index("task_asks_status_idx").on(table.status), index("task_asks_task_id_idx").on(table.taskId)],
 );
+
+// Per-operator settings, keyed by the request's actor ("human:operator", or
+// "human:<user>" behind a proxy that names people - see identity.ts). Only
+// the activity tracker's opt-in so far, which defaults off: a fresh install
+// records nothing about anyone until they turn it on.
+export const operatorSettings = pgTable("operator_settings", {
+  actorKey: text("actor_key").primaryKey(),
+  usageTracking: boolean("usage_tracking").notNull().default(false),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// What the PWA's activity tracker reports (activity.ts), one row per
+// (minute, route, name) entry of a flush. `kind` is `active` (name = the
+// module on screen, value = active seconds) or `click` (name = the feature,
+// value = clicks). Raw rows are deleted after 90 days; activity_minutes below
+// is the same data summed per minute and kept indefinitely.
+export const activityEvents = pgTable(
+  "activity_events",
+  {
+    id: serial("id").primaryKey(),
+    actorKey: text("actor_key").notNull(),
+    kind: text("kind").notNull(),
+    route: text("route").notNull(),
+    name: text("name").notNull(),
+    value: integer("value").notNull(),
+    minute: timestamp("minute", { withTimezone: true }).notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("activity_events_received_at_idx").on(table.receivedAt)],
+);
+
+export const activityMinutes = pgTable(
+  "activity_minutes",
+  {
+    actorKey: text("actor_key").notNull(),
+    minute: timestamp("minute", { withTimezone: true }).notNull(),
+    kind: text("kind").notNull(),
+    route: text("route").notNull(),
+    name: text("name").notNull(),
+    value: integer("value").notNull(),
+  },
+  // (actor, minute) leads the key, which is what every read filters on
+  (table) => [primaryKey({ columns: [table.actorKey, table.minute, table.kind, table.route, table.name] })],
+);

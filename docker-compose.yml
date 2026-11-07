@@ -43,6 +43,8 @@ services:
       # /app/secrets/global.env, whose values win over .env's.
       # Reverse-proxy auth for root grants - see README's "Root access".
       PINBOARD_PROXY_SECRET: ${PINBOARD_PROXY_SECRET:-}
+      # Per-person identity behind that proxy - see README's "Operator time tracking".
+      PINBOARD_USER_HEADER: ${PINBOARD_USER_HEADER:-}
       # Daily digest mail. User/pass/port come from env_file.
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_TLS_SERVERNAME: ${SMTP_TLS_SERVERNAME:-}

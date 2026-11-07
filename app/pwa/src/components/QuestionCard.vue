@@ -177,6 +177,7 @@ const actionable = computed(() => props.answer === null && !expired.value && !pr
         :loading="busy"
         :disabled="!complete"
         prepend-icon="mdi-send"
+        data-track="answer-question"
         @click="emit('answer', { answers: collected })"
       >
         Send answers

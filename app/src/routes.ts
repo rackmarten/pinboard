@@ -32,6 +32,7 @@ import { readinessApplies, readinessFailures, toWorkspaceRepos, type ReadinessTa
 import { listJournal, recordEvent as recordJournalEvent, unreadNotificationCount } from "./journal.js";
 import { pushConfigured, sendTestPush } from "./push.js";
 import { config } from "./config.js";
+import { actorFromHeaders, identitySettings } from "./identity.js";
 import { asksForTask } from "./asks.js";
 import {
   ChatEventError,
@@ -340,22 +341,14 @@ async function recordEvent(
 }
 
 // who is behind a request that carries no explicit actor. Most
-// write routes predate provenance and take none, so the PWA marks itself
-// with `x-pinboard-client: pwa` (a person at a browser), a script or agent
-// can name itself with `x-pinboard-actor: <type>:<name>`, and anything else
-// is journaled as an unnamed API caller rather than guessed at.
+// write routes predate provenance and take none, so it comes from the
+// request's headers instead - see identity.ts.
 export function actorFromRequest(req: FastifyRequest): { actorType: string; actorName: string } {
   const body = (req.body ?? {}) as Record<string, unknown>;
   if (typeof body.actorType === "string" && typeof body.actorName === "string") {
     return { actorType: body.actorType, actorName: body.actorName };
   }
-  const named = req.headers["x-pinboard-actor"];
-  if (typeof named === "string" && named.includes(":")) {
-    const [actorType, ...rest] = named.split(":");
-    return { actorType, actorName: rest.join(":") };
-  }
-  if (req.headers["x-pinboard-client"] === "pwa") return { actorType: "human", actorName: "operator" };
-  return { actorType: "system", actorName: "api" };
+  return actorFromHeaders(req.headers, identitySettings());
 }
 
 // whether a task carries the `root-access` label, which is what

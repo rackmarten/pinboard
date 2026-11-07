@@ -3,7 +3,9 @@ import { computed, onMounted, ref } from "vue";
 import { useDisplay } from "vuetify";
 import { AppShell, GlobalSearch, NotificationBell, type NavItem } from "@rackmarten/ui-kit";
 import { notificationSource, searchProvider } from "./app-bar.js";
-import { getAsks, getTasks } from "./api.js";
+import { getAsks, getMySettings, getTasks } from "./api.js";
+import { setTracking } from "./activity-tracker.js";
+import { router, trackedRoute } from "./router.js";
 import { REVIEW_STATUSES } from "./inbox.js";
 import { usePolling } from "./composables/usePolling.js";
 
@@ -26,6 +28,12 @@ async function refreshNeedsYou(): Promise<void> {
   needsYou.value = asks.filter((a) => a.kind === "question").length + review.length;
 }
 onMounted(() => refreshNeedsYou().catch(() => {}));
+// the activity tracker runs only for an operator who opted in (My time tab)
+onMounted(() =>
+  getMySettings()
+    .then((s) => setTracking(s.usageTracking, () => trackedRoute(router)))
+    .catch(() => {}),
+);
 usePolling(() => refreshNeedsYou().catch(() => {}), 30_000);
 
 const navItems = computed<NavItem[]>(() => [

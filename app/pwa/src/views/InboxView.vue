@@ -142,7 +142,7 @@ async function confirmVeto(ask: Ask): Promise<void> {
     <h1 class="text-h5">Needs you</h1>
     <v-alert v-if="error" type="error" density="compact" variant="tonal">{{ error }}</v-alert>
 
-    <section class="d-flex flex-column ga-3">
+    <section class="d-flex flex-column ga-3" data-module="questions">
       <div class="d-flex align-center flex-wrap ga-2">
         <h2 class="text-h6">Decide</h2>
         <v-chip v-if="questions.length" size="small" color="info">{{ questions.length }}</v-chip>
@@ -185,14 +185,14 @@ async function confirmVeto(ask: Ask): Promise<void> {
 
     <v-divider />
 
-    <section class="d-flex flex-column ga-3">
+    <section class="d-flex flex-column ga-3" data-module="review">
       <h2 class="text-h6">Review</h2>
       <ReviewSection />
     </section>
 
     <v-divider />
 
-    <section class="d-flex flex-column ga-3">
+    <section class="d-flex flex-column ga-3" data-module="fyi">
       <h2 class="text-h6">FYI</h2>
 
       <v-card v-for="ask in assumptions" :key="ask.id" variant="outlined" density="compact">
@@ -224,13 +224,13 @@ async function confirmVeto(ask: Ask): Promise<void> {
           <v-spacer />
           <template v-if="vetoing === ask.id">
             <v-btn variant="text" @click="vetoing = null">Cancel</v-btn>
-            <v-btn color="error" variant="tonal" :disabled="!vetoText.trim()" :loading="busyAsk === ask.id" @click="confirmVeto(ask)">
+            <v-btn color="error" variant="tonal" :disabled="!vetoText.trim()" :loading="busyAsk === ask.id" data-track="veto" @click="confirmVeto(ask)">
               Veto
             </v-btn>
           </template>
           <template v-else>
             <v-btn variant="text" color="error" @click="startVeto(ask)">Veto</v-btn>
-            <v-btn v-if="ask.status === 'open'" variant="tonal" color="success" :loading="busyAsk === ask.id" @click="acceptAssumption(ask)">
+            <v-btn v-if="ask.status === 'open'" variant="tonal" color="success" :loading="busyAsk === ask.id" data-track="accept-assumption" @click="acceptAssumption(ask)">
               Accept
             </v-btn>
           </template>
