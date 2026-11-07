@@ -8,6 +8,10 @@ publishes the container image `ghcr.io/rackmarten/pinboard` at that version.
 ## [Unreleased]
 
 ### Added
+- `GET /events` takes `since`/`until` (ISO dates, a malformed one is a 400)
+  and `to=<status>`, which keeps only status transitions into that status,
+  so "every task that went to rework this week, with its reason" is one
+  query.
 - Per-task reasoning effort with a per-project default, for foreman to run a
   task with `--effort`. Tasks take `reasoningEffort` and projects
   `defaultReasoningEffort` (`medium`, `high` or `null`, anything else is a
