@@ -1,4 +1,4 @@
-import { and, eq, desc, gt, inArray, isNull, isNotNull, or, sql as sqlRaw } from "drizzle-orm";
+import { and, eq, desc, getTableColumns, gt, inArray, isNull, isNotNull, or, sql as sqlRaw } from "drizzle-orm";
 import { keywordSearch } from "@rackmarten/server-kit";
 import { projectKeywords, taskKeywords, type TaskText } from "./keywords.js";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
@@ -390,6 +390,11 @@ const JOURNALED_TASK_FIELDS = [
   "rootScope",
 ];
 
+// Task columns without the search index, which is server-only and ~40% of
+// a task row: skipped at the query too, not just by http-payload.ts's
+// response strip.
+const { keywords: _keywords, ...taskListColumns } = getTableColumns(tasks);
+
 // config screens (agents, licenses, routing rules, settings,
 // budget periods, labels) journaled by one hook rather than one call per
 // route - their changes are rare, so the route and changed field names are
@@ -691,7 +696,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const rows = await db
-      .select()
+      .select(taskListColumns)
       .from(tasks)
       .where(conditions.length ? and(...conditions) : undefined)
       .orderBy(desc(tasks.priority), desc(tasks.createdAt));
