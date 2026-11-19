@@ -4,6 +4,7 @@ import { createApp } from "@rackmarten/server-kit";
 import { config } from "./config.js";
 import { sql } from "./db/client.js";
 import { runMigrations } from "./db/migrate.js";
+import { registerApiPayloadHooks, registerHttpLayer } from "./http-payload.js";
 import { backfillKeywords } from "./keywords.js";
 import { API_PREFIX, registerRoutes } from "./routes.js";
 import { registerReleaseRoutes } from "./releases-routes.js";
@@ -24,13 +25,15 @@ const app = await createApp({
   healthCheck: async () => {
     await sql`select 1`;
   },
-  spa: { root: path.join(__dirname, "../public") },
 });
 
 for (const { line } of integrationStatus(config)) app.log.info(line);
 
+await registerHttpLayer(app, path.join(__dirname, "../public"));
+
 await app.register(
   async (api) => {
+    registerApiPayloadHooks(api);
     await registerRoutes(api);
     await registerReleaseRoutes(api);
     await registerAlertRoutes(api);

@@ -46,6 +46,12 @@ publishes the container image `ghcr.io/rackmarten/pinboard` at that version.
   never toward the period or session spend that gates dispatch.
 
 ### Changed
+- API responses are much smaller on the wire. The `keywords` search index
+  is no longer sent with tasks or projects (it was about 40% of the task
+  list). API responses and the PWA's assets are gzip or brotli compressed
+  for clients that accept it. JSON responses carry an ETag and
+  `cache-control: no-cache`, so a poll that finds nothing new gets an
+  empty 304 instead of the whole list again.
 - A run's budget is now $2 per effort point (was $1), with the ceiling
   raised from $10 to $26, so effort 3 gets $6 and effort 8 gets $16.
 - Cost estimates now scale with a task's effort, on by default. A task with
