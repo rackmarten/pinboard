@@ -76,4 +76,10 @@ export const config = {
     // Space- or comma-separated tailnet IPs of the operators' own devices.
     operatorIps: (process.env.OPERATOR_DEVICE_IPS ?? "").split(/[\s,]+/).filter(Boolean),
   },
+  // a request header the reverse proxy sets to the person behind a PWA
+  // request (a bare user id). Trusted only alongside PINBOARD_PROXY_SECRET,
+  // see identity.ts. Empty = every PWA request is the one "operator".
+  identity: {
+    userHeader: (process.env.PINBOARD_USER_HEADER ?? "").trim().toLowerCase(),
+  },
 };

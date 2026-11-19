@@ -275,9 +275,9 @@ async function confirmReject(requeue: boolean): Promise<void> {
         </v-card-text>
         <v-card-actions>
           <v-spacer />
-          <v-btn variant="text" color="error" :loading="acting === task.id" @click="openReject(task)">Reject</v-btn>
-          <v-btn v-if="!isPreMergeHold(task)" variant="text" :loading="acting === task.id" @click="doneWithoutMerging(task)">Mark done without merging</v-btn>
-          <v-btn variant="tonal" color="success" :loading="acting === task.id" @click="approve(task)">
+          <v-btn variant="text" color="error" :loading="acting === task.id" data-track="reject" @click="openReject(task)">Reject</v-btn>
+          <v-btn v-if="!isPreMergeHold(task)" variant="text" :loading="acting === task.id" data-track="done-without-merging" @click="doneWithoutMerging(task)">Mark done without merging</v-btn>
+          <v-btn variant="tonal" color="success" :loading="acting === task.id" data-track="approve" @click="approve(task)">
             {{ isPreMergeHold(task) ? "Approve & merge" : "Approve" }}
           </v-btn>
         </v-card-actions>
@@ -308,6 +308,7 @@ async function confirmReject(requeue: boolean): Promise<void> {
             color="success"
             :disabled="!canConfirmApprove(approveComment)"
             :loading="acting === approveTarget?.id"
+            data-track="approve-unticked"
             @click="confirmApprove()"
           >
             Approve
@@ -339,11 +340,12 @@ async function confirmReject(requeue: boolean): Promise<void> {
             color="warning"
             :disabled="!rejectReason.trim()"
             :loading="acting === rejectTarget?.id"
+            data-track="reject-requeue"
             @click="confirmReject(true)"
           >
             Reject &amp; requeue
           </v-btn>
-          <v-btn color="error" :disabled="!rejectReason.trim()" :loading="acting === rejectTarget?.id" @click="confirmReject(false)">
+          <v-btn color="error" :disabled="!rejectReason.trim()" :loading="acting === rejectTarget?.id" data-track="reject" @click="confirmReject(false)">
             Reject
           </v-btn>
         </v-card-actions>
