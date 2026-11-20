@@ -1,0 +1,14 @@
+# Override used only by scripts/screenshots.sh, on top of docker-compose.yml
+# and docker-compose.dev.yml: the demo stack must not load the checkout's
+# .env (env_file), and drops the fixed container names so it can run next to
+# a local install. The alias is the hostname the browser uses: Chromium
+# preloads HSTS for the whole .app TLD, so http://app would become https.
+services:
+  db:
+    container_name: !reset null
+  app:
+    container_name: !reset null
+    env_file: !reset []
+    networks:
+      default:
+        aliases: [pinboard-demo]

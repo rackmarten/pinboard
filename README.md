@@ -18,6 +18,32 @@ You plan and review in pinboard; foreman picks up what you queue and does it.
 > useful. It works for one operator and a handful of repos; it is not a
 > product, and there is no hosted version.
 
+## Screenshots
+
+<p>
+  <img src="docs/screenshots/task-list-dark.png" width="49%" alt="Task list in the dark theme: tasks from several projects with type, executor, priority, effort and status, and a story with its children grouped under it">
+  <img src="docs/screenshots/task-list-light.png" width="49%" alt="The same task list in the light theme">
+</p>
+
+<p>
+  <img src="docs/screenshots/task-detail-dark.png" width="49%" alt="A story's detail page: latest handoff, a review checklist with one item ticked, the description, and its children in run order with statuses and a blocked-by note">
+  <img src="docs/screenshots/inbox-dark.png" width="49%" alt="Needs you: an open agent question with three options and a recommended one, above the review queue with a handoff summary and checklist">
+</p>
+<p>
+  <img src="docs/screenshots/plan-dark.png" width="49%" alt="Plan view: budget left in the period, spend in the current session window, and queued tasks laid out across upcoming windows">
+  <img src="docs/screenshots/governor-dark.png" width="49%" alt="Governor view: weekly and session allowance readings, implied cost per percent, the budget rate and concurrency">
+</p>
+<p>
+  <img src="docs/screenshots/phone-task-list-dark.png" width="24%" alt="Task list at phone width">
+  <img src="docs/screenshots/phone-inbox-dark.png" width="24%" alt="Needs you at phone width, with an open question">
+</p>
+
+All the data in them is made up. `scripts/screenshots.sh` regenerates them:
+it builds this checkout, seeds a throwaway stack with demo data
+(`scripts/demo-seed.mjs`), captures with headless Chromium in the pinned
+Playwright image and tears the stack down again. It needs Docker with the
+compose plugin, and nothing else on the host.
+
 ## Quickstart
 
 You need Docker with the compose plugin, and an Anthropic credential for the
