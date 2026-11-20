@@ -4,12 +4,15 @@
 # own compose project, seeds it (scripts/demo-seed.mjs, API only), captures
 # with headless Chromium in the pinned Playwright image
 # (scripts/capture-screenshots.mjs) and tears the stack down again, volumes
-# included, also on failure. Needs Docker with the compose plugin and
-# network access to the Playwright image and the npm registry; nothing else
-# is installed on the host. The build is tagged pinboard-app:local, the same
-# tag docker-compose.dev.yml uses, and is left in place.
+# included, also on failure. With --video it records the README demo clip
+# instead (scripts/capture-video.mjs): a scripted walk through the same demo,
+# written as docs/screenshots/demo.gif, leaving the PNGs alone. Needs Docker
+# with the compose plugin and network access to the Playwright image and the
+# npm registry; nothing else is installed on the host. The build is tagged
+# pinboard-app:local, the same tag docker-compose.dev.yml uses, and is left
+# in place.
 #
-# Usage: scripts/screenshots.sh
+# Usage: scripts/screenshots.sh [--video]
 #
 # Environment: SCREENSHOTS_PROJECT (compose project name, default
 # pinboard-screenshots), SCREENSHOTS_PORT (host port for the UI on
@@ -20,8 +23,10 @@
 # from loading it too.
 set -euo pipefail
 
+mode=screenshots
 case "${1:-}" in
   "") ;;
+  --video) mode=video ;;
   -h|--help) sed -n '2,/^set -euo/{s/^# \{0,1\}//p}' "$0"; exit 0 ;;
   *) echo "unknown argument: $1" >&2; exit 2 ;;
 esac
@@ -75,10 +80,10 @@ echo "Starting db + app (project $project, port $port)..."
 compose up -d --build --wait --wait-timeout 600 app
 
 mkdir -p "$out_dir"
-echo "Seeding demo data and capturing with $playwright_image..."
+echo "Seeding demo data and capturing ($mode) with $playwright_image..."
 # On the stack's own network, so the app is reachable whether or not the
 # host port is reachable from this shell, under the alias from
-# scripts/screenshots.compose.yml. Runs as the calling user so the PNGs are
+# scripts/screenshots.compose.yml. Runs as the calling user so the output is
 # not owned by root.
 docker run --rm --init --name "$capture" \
   --network "${project}_default" \
@@ -92,11 +97,20 @@ docker run --rm --init --name "$capture" \
     mkdir -p /tmp/shots && cd /tmp/shots
     npm init -y >/dev/null
     npm install --silent --no-audit --no-fund "playwright@$0" "sharp@$1"
-    cp /src/capture-screenshots.mjs .
+    cp /src/capture-screenshots.mjs /src/capture-video.mjs .
     node /src/demo-seed.mjs http://pinboard-demo:8095
-    node capture-screenshots.mjs http://pinboard-demo:8095 /tmp/shots/out
-    rm -f /out/*.png
-    cp /tmp/shots/out/*.png /out/
-  ' "$playwright_version" "$sharp_version"
+    if [ "$2" = video ]; then
+      node capture-video.mjs http://pinboard-demo:8095 /tmp/shots/out
+      cp /tmp/shots/out/demo.gif /out/
+    else
+      node capture-screenshots.mjs http://pinboard-demo:8095 /tmp/shots/out
+      rm -f /out/*.png
+      cp /tmp/shots/out/*.png /out/
+    fi
+  ' "$playwright_version" "$sharp_version" "$mode"
 
-echo "Screenshots written to $out_dir/."
+if [ "$mode" = video ]; then
+  echo "Demo clip written to $out_dir/demo.gif."
+else
+  echo "Screenshots written to $out_dir/."
+fi
