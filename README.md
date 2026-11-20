@@ -14,6 +14,10 @@ A work database with a human UI, and the front half of a pair:
 
 You plan and review in pinboard; foreman picks up what you queue and does it.
 
+<p align="center">
+  <img src="docs/screenshots/demo.gif" width="100%" alt="A 30-second walk through the demo data: the task list narrowed to one project with a story and its children grouped under it, the story's page with a review checklist item being ticked, Needs you with an open question and the review queue, then the plan view">
+</p>
+
 > **Scope.** This is the author's homelab tooling, published in case it is
 > useful. It works for one operator and a handful of repos; it is not a
 > product, and there is no hosted version.
@@ -41,8 +45,10 @@ You plan and review in pinboard; foreman picks up what you queue and does it.
 All the data in them is made up. `scripts/screenshots.sh` regenerates them:
 it builds this checkout, seeds a throwaway stack with demo data
 (`scripts/demo-seed.mjs`), captures with headless Chromium in the pinned
-Playwright image and tears the stack down again. It needs Docker with the
-compose plugin, and nothing else on the host.
+Playwright image and tears the stack down again. `scripts/screenshots.sh
+--video` does the same for the demo clip at the top
+(`scripts/capture-video.mjs`). It needs Docker with the compose plugin, and
+nothing else on the host.
 
 ## Quickstart
 

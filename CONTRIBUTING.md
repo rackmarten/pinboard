@@ -24,6 +24,7 @@ cd app && npm ci && npm run typecheck && npm test         # API
 cd app/pwa && npm ci && npm run typecheck && npm test     # PWA
 ./scripts/smoke-public-stack.sh --build                  # whole stack, then torn down
 ./scripts/screenshots.sh                                 # refresh docs/screenshots/ after a UI change
+./scripts/screenshots.sh --video                         # re-record the README demo clip
 ```
 
 CI (`.github/workflows/security-check.yml`) runs the same tests plus

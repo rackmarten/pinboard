@@ -19,6 +19,11 @@ publishes the container image `ghcr.io/rackmarten/pinboard` at that version.
   under its own compose project, seeds it through the API
   (`scripts/demo-seed.mjs`), captures with headless Chromium in the pinned
   Playwright image and tears everything down again, volumes included.
+- A 30-second demo clip at the top of the README, and
+  `scripts/screenshots.sh --video`, which records it from the same demo
+  stack: a scripted walk through the task list, a story with its checklist
+  and children, Needs you and the plan, in the dark theme at 1440x900,
+  captured from Chromium's screencast and packed into a GIF with sharp.
 - `GET /events` takes `since`/`until` (ISO dates, a malformed one is a 400)
   and `to=<status>`, which keeps only status transitions into that status,
   so "every task that went to rework this week, with its reason" is one
