@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { useDisplay } from "vuetify";
 import { AppShell, GlobalSearch, NotificationBell, type NavItem } from "@rackmarten/ui-kit";
 import { notificationSource, searchProvider } from "./app-bar.js";
-import { getAsks, getMySettings, getTasks } from "./api.js";
+import { getAsks, getMySettings, getTaskSummaries } from "./api.js";
 import { setTracking } from "./activity-tracker.js";
 import { router, trackedRoute } from "./router.js";
 import { REVIEW_STATUSES } from "./inbox.js";
@@ -24,7 +24,7 @@ const avatarBaseUrl = import.meta.env.VITE_AVATAR_BASE_URL ?? "";
 // label.
 const needsYou = ref(0);
 async function refreshNeedsYou(): Promise<void> {
-  const [asks, review] = await Promise.all([getAsks(["open"]), getTasks({ status: REVIEW_STATUSES })]);
+  const [asks, review] = await Promise.all([getAsks(["open"]), getTaskSummaries({ status: REVIEW_STATUSES })]);
   needsYou.value = asks.filter((a) => a.kind === "question").length + review.length;
 }
 onMounted(() => refreshNeedsYou().catch(() => {}));

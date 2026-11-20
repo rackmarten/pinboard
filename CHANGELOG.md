@@ -8,6 +8,11 @@ publishes the container image `ghcr.io/rackmarten/pinboard` at that version.
 ## [Unreleased]
 
 ### Added
+- `GET /tasks?view=summary` (list rows without the description, repair
+  notes, root-grant and session fields), `GET /tasks?doneSince=<ISO time>`
+  (done tasks finished after it) and `GET /tasks/counts` (counts by status
+  and project). `GET /tasks/:id` now carries `parentTaskId`, and `q` also
+  matches `#12`.
 - `GET /events` takes `since`/`until` (ISO dates, a malformed one is a 400)
   and `to=<status>`, which keeps only status transitions into that status,
   so "every task that went to rework this week, with its reason" is one
@@ -60,6 +65,12 @@ publishes the container image `ghcr.io/rackmarten/pinboard` at that version.
   never toward the period or session spend that gates dispatch.
 
 ### Changed
+- The PWA asks only for what each screen shows: lists fetch summary rows,
+  the Dashboard fetches counts, the inbox only tasks done since the last
+  visit, and a task's page no longer loads every task (its relation picker
+  searches the server as you type). The task list's free-text box searches
+  descriptions on the server, debounced. Polling pauses while the tab is
+  hidden and refreshes once when it is visible again.
 - API responses are much smaller on the wire. The `keywords` search index
   is no longer sent with tasks or projects (it was about 40% of the task
   list). API responses and the PWA's assets are gzip or brotli compressed

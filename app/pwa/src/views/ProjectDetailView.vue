@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import { getProject, getProjects, getTasks, type Project, type Task } from "../api.js";
+import { getProject, getProjects, getTaskSummaries, type Project, type TaskSummary } from "../api.js";
 import ProjectFormDialog from "../components/ProjectFormDialog.vue";
 import JournalTimeline from "../components/JournalTimeline.vue";
 import TaskList from "../components/TaskList.vue";
@@ -14,7 +14,7 @@ const projectId = computed(() => Number(props.id));
 
 const project = ref<Project | null>(null);
 const allProjects = ref<Project[]>([]);
-const tasks = ref<Task[]>([]);
+const tasks = ref<TaskSummary[]>([]);
 const loading = ref(false);
 const error = ref<string | null>(null);
 const showEdit = ref(false);
@@ -60,7 +60,7 @@ async function load(): Promise<void> {
     [project.value, allProjects.value, tasks.value] = await Promise.all([
       getProject(projectId.value),
       getProjects({ includeArchived: true }),
-      getTasks({ projectId: projectId.value }),
+      getTaskSummaries({ projectId: projectId.value }),
     ]);
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);

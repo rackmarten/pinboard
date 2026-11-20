@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Ask, Task } from "./api.js";
-import { createDecideQueue, doneSince, groupByProject, handoffTldr, recentAssumptions, recommendedIndex } from "./inbox.js";
+import type { Ask } from "./api.js";
+import { createDecideQueue, groupByProject, handoffTldr, recentAssumptions, recommendedIndex } from "./inbox.js";
 
 function ask(over: Partial<Ask>): Ask {
   return {
@@ -63,14 +63,6 @@ describe("FYI filters", () => {
       ask({ id: 5, kind: "question", createdAt: "2026-09-29T00:00:00Z" }),
     ];
     expect(recentAssumptions(list, now).map((a) => a.id)).toEqual([1, 2]);
-  });
-  it("lists done tasks updated after the last visit", () => {
-    const tasks = [
-      { id: 1, status: "done", updatedAt: "2026-09-29T11:00:00Z" },
-      { id: 2, status: "done", updatedAt: "2026-09-29T09:00:00Z" },
-      { id: 3, status: "review", updatedAt: "2026-09-29T11:00:00Z" },
-    ] as Task[];
-    expect(doneSince(tasks, Date.parse("2026-09-29T10:00:00Z")).map((t) => t.id)).toEqual([1]);
   });
 });
 

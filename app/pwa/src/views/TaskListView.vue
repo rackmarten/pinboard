@@ -15,6 +15,7 @@ import {
   type TaskFilter,
 } from "../api.js";
 import { useTasks } from "../composables/useTasks.js";
+import { useTaskSearch } from "../composables/useTaskSearch.js";
 import TaskFormDialog from "../components/TaskFormDialog.vue";
 import TaskStatusChip from "../components/TaskStatusChip.vue";
 import SortableDataTable, { type SortItem, type SortableDataTableHeader } from "../components/SortableDataTable.vue";
@@ -93,13 +94,16 @@ const bulkEditHasChanges = computed(
     !!bulkPriority.value ||
     bulkAutonomyLevel.value !== null,
 );
-// Free-text match over title/description, entirely client-side against the
-// already-fetched list (no backend search endpoint - the task count here
-// doesn't warrant one yet) - see PLAN.md/AGENTS.md on why keyword search
-// was missing and Labels being the structured alternative to this.
-const search = ref<string>(typeof route.query.q === "string" ? route.query.q : "");
+// Free-text search: the list rows carry no description, so the term goes to
+// the server's keyword search (title + description, debounced) and narrows
+// the loaded list to its hits. Title and #id matches show at once, before
+// the server answers. The hits refresh when the term or filters change, not
+// on the list's poll.
+// null once the clearable field is cleared.
+const search = ref<string | null>(typeof route.query.q === "string" ? route.query.q : "");
 
 const { tasks: allTasks, loading, error, load } = useTasks(filter);
+const { results: searchResults } = useTaskSearch(search, () => filter.value);
 
 // Status is a multi-select. Rejected and done tasks (accidental
 // duplicates, finished work) stay in the default view's data but are hidden
@@ -110,20 +114,13 @@ const { tasks: allTasks, loading, error, load } = useTasks(filter);
 // applies here.
 const DEFAULT_HIDDEN_STATUSES = new Set(["rejected", "done"]);
 const tasks = computed(() => {
-  const q = search.value.trim().toLowerCase();
+  const q = (search.value ?? "").trim().toLowerCase();
   const base = filter.value.status?.length
     ? allTasks.value
     : allTasks.value.filter((t) => !DEFAULT_HIDDEN_STATUSES.has(t.status));
-  const matched = !q
-    ? base
-    : base.filter((t) => {
-        return (
-          t.title.toLowerCase().includes(q) ||
-          (t.description ?? "").toLowerCase().includes(q) ||
-          `#${t.id}` === q
-        );
-      });
-  return matched;
+  if (!q) return base;
+  const serverIds = new Set(searchResults.value?.map((t) => t.id));
+  return base.filter((t) => serverIds.has(t.id) || t.title.toLowerCase().includes(q) || `#${t.id}` === q);
 });
 
 // children of a story are nested under it. The table's own sort
@@ -220,7 +217,7 @@ watch([filter, sortBy, search, page], () => {
       executorMode: filter.value.executorMode ?? undefined,
       sort: isDefaultSort ? undefined : primarySort?.key,
       dir: !isDefaultSort && primarySort?.order === "asc" ? "asc" : undefined,
-      q: search.value.trim() || undefined,
+      q: (search.value ?? "").trim() || undefined,
       page: page.value > 1 ? String(page.value) : undefined,
     },
   });

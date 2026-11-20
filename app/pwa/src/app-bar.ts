@@ -4,7 +4,7 @@ import type { NotificationSource, SearchProvider } from "@rackmarten/ui-kit";
 import {
   getNotifications,
   getProjects,
-  getTasks,
+  getTaskSummaries,
   getUnreadNotificationCount,
   markAllNotificationsRead,
   markNotificationRead,
@@ -25,7 +25,7 @@ export const notificationSource: NotificationSource = {
 
 // Tasks by ID or keywords (title + description), projects by name (#335).
 export const searchProvider: SearchProvider = async (term) => {
-  const [tasks, projects] = await Promise.all([getTasks({ q: term }), getProjects({ q: term })]);
+  const [tasks, projects] = await Promise.all([getTaskSummaries({ q: term }), getProjects({ q: term })]);
   return [
     {
       label: "Tasks",

@@ -13,7 +13,7 @@ import {
   getTask,
   getTaskChatThread,
   getTaskRelations,
-  getTasks,
+  getTaskSummaries,
   grantRootAccess,
   revokeRootAccess,
   ROOT_LABEL,
@@ -25,7 +25,7 @@ import {
   type Project,
   type PullRequest,
   type RelationType,
-  type Task,
+  type TaskSummary,
   type TaskDetail,
   type TaskEvent,
   type TaskRelation,
@@ -42,6 +42,7 @@ import TaskList from "../components/TaskList.vue";
 import TaskPriorityChip from "../components/TaskPriorityChip.vue";
 import TaskStatusChip from "../components/TaskStatusChip.vue";
 import { usePolling } from "../composables/usePolling.js";
+import { useTaskSearch } from "../composables/useTaskSearch.js";
 import { renderDescriptionHtml } from "../description-html.js";
 import { executorModeIcon, prStateColor, taskTypeColor, taskTypeIcon } from "../display.js";
 import { groupRelations } from "../relations.js";
@@ -75,7 +76,22 @@ const projects = ref<Project[]>([]);
 const sessionThread = ref<ChatThread | null>(null);
 const relations = ref<TaskRelation[]>([]);
 const events = ref<TaskEvent[]>([]);
-const allTasks = ref<Task[]>([]);
+// the Add relation picker's options: a server search on what is typed.
+const relationSearch = ref("");
+const { results: relationResults, searching: relationSearching } = useTaskSearch(relationSearch);
+// The last answer stays listed while the next one is in flight, and the
+// picked task stays an item, so its label survives Vuetify setting the
+// search to it.
+const relationOptions = ref<TaskSummary[]>([]);
+const relationPicked = ref<TaskSummary | null>(null);
+watch(relationResults, (found) => {
+  if (found) relationOptions.value = found;
+});
+const relationCandidates = computed(() => {
+  const picked = relationPicked.value;
+  const options = picked && !relationOptions.value.some((t) => t.id === picked.id) ? [picked, ...relationOptions.value] : relationOptions.value;
+  return options.filter((t) => t.id !== taskId.value);
+});
 const loading = ref(false);
 const error = ref<string | null>(null);
 const showEdit = ref(false);
@@ -85,6 +101,9 @@ const showAddRelation = ref(false);
 useBackClose(showAddRelation);
 const newRelationType = ref<RelationType>("related");
 const newRelationTargetId = ref<number | null>(null);
+watch(newRelationTargetId, (id) => {
+  relationPicked.value = id === null ? null : (relationOptions.value.find((t) => t.id === id) ?? relationPicked.value);
+});
 const addingRelation = ref(false);
 const showActivity = ref(false);
 const updatingStatus = ref(false);
@@ -162,30 +181,30 @@ const projectChain = computed(() => {
 // tasks.parentTaskId was dropped in favor of taskRelations (the
 // same relationType "parent"/"child" rows foreman's runner.ts already reads
 // for subtask context), so the ancestor chain is walked one relations fetch
-// per level instead of following a column on allTasks. Only recomputed on a
+// per level, each parent's id and title coming from its relation row. Only recomputed on a
 // full load() (taskId change), not on the 5s poll - the hierarchy itself
 // rarely changes and re-walking it every poll would mean N extra requests
 // per tick for an N-deep chain.
-function findParentId(rels: TaskRelation[]): number | null {
+type ParentTask = NonNullable<TaskRelation["otherTask"]>;
+
+function findParent(rels: TaskRelation[]): ParentTask | null {
   const rel = rels.find(
     (r) =>
       (r.relationType === "child" && r.direction === "to") || (r.relationType === "parent" && r.direction === "from"),
   );
-  return rel?.otherTask?.id ?? null;
+  return rel?.otherTask ?? null;
 }
 
-const taskAncestors = ref<Task[]>([]);
+const taskAncestors = ref<ParentTask[]>([]);
 
 async function loadTaskAncestors(): Promise<void> {
-  const chain: Task[] = [];
+  const chain: ParentTask[] = [];
   const seen = new Set<number>();
-  let currentId = task.value ? findParentId(relations.value) : null;
-  while (currentId !== null && !seen.has(currentId)) {
-    seen.add(currentId);
-    const found = allTasks.value.find((t) => t.id === currentId);
-    if (!found) break;
-    chain.unshift(found);
-    currentId = findParentId(await getTaskRelations(currentId));
+  let current = task.value ? findParent(relations.value) : null;
+  while (current !== null && !seen.has(current.id)) {
+    seen.add(current.id);
+    chain.unshift(current);
+    current = findParent(await getTaskRelations(current.id));
   }
   taskAncestors.value = chain;
 }
@@ -301,7 +320,7 @@ const shownRelations = computed(() =>
 );
 
 interface StoryChild {
-  task: Task;
+  task: TaskSummary;
   blockedBy: number[];
 }
 const storyChildren = ref<StoryChild[]>([]);
@@ -311,7 +330,7 @@ async function loadStoryChildren(): Promise<void> {
     storyChildren.value = [];
     return;
   }
-  const children = await getTasks({ parentTaskId: taskId.value });
+  const children = await getTaskSummaries({ parentTaskId: taskId.value });
   const rels = await Promise.all(children.map((c) => getTaskRelations(c.id)));
   const dependsOn = new Map<number, number[]>();
   const satisfiedById = new Map<number, boolean>();
@@ -332,7 +351,7 @@ async function loadStoryChildren(): Promise<void> {
 interface RelationGroupView {
   label: string;
   note?: string;
-  tasks: Task[] | NonNullable<TaskRelation["otherTask"]>[];
+  tasks: TaskSummary[] | NonNullable<TaskRelation["otherTask"]>[];
   relationIds: (number | undefined)[];
   blockedBy?: number[][];
 }
@@ -384,7 +403,7 @@ async function load(): Promise<void> {
 }
 
 onMounted(async () => {
-  [projects.value, allTasks.value] = await Promise.all([getProjects({ includeArchived: true }), getTasks()]);
+  projects.value = await getProjects({ includeArchived: true });
   await load();
 });
 
@@ -829,9 +848,13 @@ function formatDate(iso: string): string {
             <v-autocomplete
               v-model="newRelationTargetId"
               label="Task"
-              :items="allTasks.filter((t) => t.id !== taskId)"
-              :item-title="(t: Task) => `#${t.id} ${t.title}`"
+              v-model:search="relationSearch"
+              :items="relationCandidates"
+              :item-title="(t: TaskSummary) => `#${t.id} ${t.title}`"
               item-value="id"
+              :loading="relationSearching"
+              no-filter
+              placeholder="Search by title, description or #id"
               density="comfortable"
             />
           </v-card-text>

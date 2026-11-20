@@ -1,9 +1,9 @@
 import { ref, watch, type Ref } from "vue";
-import { getTasks, type Task, type TaskFilter } from "../api.js";
+import { getTaskSummaries, type TaskSummary, type TaskFilter } from "../api.js";
 import { usePolling } from "./usePolling.js";
 
 export function useTasks(filter: Ref<TaskFilter>) {
-  const tasks = ref<Task[]>([]);
+  const tasks = ref<TaskSummary[]>([]);
   const loading = ref(false);
   const error = ref<string | null>(null);
 
@@ -11,7 +11,7 @@ export function useTasks(filter: Ref<TaskFilter>) {
     loading.value = true;
     error.value = null;
     try {
-      tasks.value = await getTasks(filter.value);
+      tasks.value = await getTaskSummaries(filter.value);
     } catch (err) {
       error.value = err instanceof Error ? err.message : String(err);
     } finally {
@@ -23,7 +23,7 @@ export function useTasks(filter: Ref<TaskFilter>) {
   // I4c: keep the list current without a manual reload. Silent (no
   // `loading` flag) so it doesn't flicker the progress bar every 5s.
   usePolling(() =>
-    getTasks(filter.value)
+    getTaskSummaries(filter.value)
       .then((t) => {
         tasks.value = t;
       })

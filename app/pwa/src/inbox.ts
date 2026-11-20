@@ -2,7 +2,7 @@
 // recent, the Decide queue's state) live here so they're testable without
 // mounting InboxView.
 import { computed, ref, type ComputedRef, type Ref } from "vue";
-import type { Ask, Handoff, Task } from "./api.js";
+import type { Ask, Handoff } from "./api.js";
 
 export const REVIEW_STATUSES = ["review", "awaiting_review"];
 export const FYI_WINDOW_MS = 48 * 3600_000;
@@ -40,10 +40,6 @@ export function recentAssumptions(asks: Ask[], now: number): Ask[] {
   return asks.filter(
     (a) => a.kind === "assumption" && (a.status === "open" || a.status === "accepted") && now - Date.parse(a.createdAt) <= FYI_WINDOW_MS,
   );
-}
-
-export function doneSince(tasks: Task[], since: number): Task[] {
-  return tasks.filter((t) => t.status === "done" && Date.parse(t.updatedAt) > since);
 }
 
 // The TL;DR a Review card shows: the session's own summary when it wrote
