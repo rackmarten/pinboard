@@ -4,7 +4,7 @@ import { createApp } from "@rackmarten/server-kit";
 import { config } from "./config.js";
 import { sql } from "./db/client.js";
 import { runMigrations } from "./db/migrate.js";
-import { registerApiPayloadHooks, registerHttpLayer } from "./http-payload.js";
+import { registerApiPayloadHooks } from "./http-payload.js";
 import { backfillKeywords } from "./keywords.js";
 import { API_PREFIX, registerRoutes } from "./routes.js";
 import { registerReleaseRoutes } from "./releases-routes.js";
@@ -20,17 +20,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // The built PWA (app/pwa) - see Dockerfile's pwa-build stage, which copies
 // its dist/ here as ./public. pages at clean URLs, the JSON API
-// under /api (homelab-kit's convention).
+// under /api (server-kit's convention). createApp registers compression and
+// ETags before it, so the PWA and the API below are both compressed.
 const app = await createApp({
   auth: { strategy: "tailnet-trust" },
+  spa: { root: path.join(__dirname, "../public") },
   healthCheck: async () => {
     await sql`select 1`;
   },
 });
 
 for (const { line } of integrationStatus(config)) app.log.info(line);
-
-await registerHttpLayer(app, path.join(__dirname, "../public"));
 
 await app.register(
   async (api) => {
