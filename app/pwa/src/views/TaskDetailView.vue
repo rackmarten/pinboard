@@ -76,6 +76,7 @@ const projects = ref<Project[]>([]);
 const sessionThread = ref<ChatThread | null>(null);
 const relations = ref<TaskRelation[]>([]);
 const events = ref<TaskEvent[]>([]);
+const ACTIVITY_TAIL = { type: "activity", limit: 50 };
 // the Add relation picker's options: a server search on what is typed.
 const relationSearch = ref("");
 const { results: relationResults, searching: relationSearching } = useTaskSearch(relationSearch);
@@ -245,10 +246,10 @@ async function resolveAskInChat(askId: number): Promise<void> {
 
 // I19: live turn-by-turn activity from foreman's runner, tailed from a
 // headless session's stream-json output - see routes.ts's POST
-// /tasks/:id/events. Capped client-side (last 50) so a long-running or
-// looping attempt can't blow up the DOM - the full history is still in
-// pinboard's events table if needed.
-const activityEvents = computed(() => events.value.filter((e) => e.eventType === "activity").slice(-50));
+// /tasks/:id/events. Only the last 50 are fetched, so a long-running or
+// looping attempt can't blow up the DOM or the 5s poll - the full history is
+// still in pinboard's events table if needed.
+const activityEvents = events;
 
 interface ActivityDetail {
   kind: string;
@@ -387,7 +388,7 @@ async function load(): Promise<void> {
       getPullRequests(taskId.value),
       getTaskChatThread(taskId.value),
       getTaskRelations(taskId.value),
-      getEvents(taskId.value),
+      getEvents(taskId.value, ACTIVITY_TAIL),
       getHandoffs(taskId.value),
     ]);
     await Promise.all([
@@ -419,7 +420,7 @@ usePolling(async () => {
       getPullRequests(taskId.value),
       getTaskChatThread(taskId.value),
       getTaskRelations(taskId.value),
-      getEvents(taskId.value),
+      getEvents(taskId.value, ACTIVITY_TAIL),
       getHandoffs(taskId.value),
     ]);
   } catch {

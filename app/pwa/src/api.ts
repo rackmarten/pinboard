@@ -560,8 +560,13 @@ export interface TaskEvent {
   createdAt: string;
 }
 
-export function getEvents(taskId: number): Promise<TaskEvent[]> {
-  return api(`/tasks/${taskId}/events`);
+/** The task's events, oldest first; `limit` keeps only the newest that many (of `type`). */
+export function getEvents(taskId: number, opts: { type?: string; limit?: number } = {}): Promise<TaskEvent[]> {
+  const params = new URLSearchParams();
+  if (opts.type) params.set("type", opts.type);
+  if (opts.limit !== undefined) params.set("limit", String(opts.limit));
+  const qs = params.toString();
+  return api(`/tasks/${taskId}/events${qs ? `?${qs}` : ""}`);
 }
 
 export function getPullRequests(taskId: number): Promise<PullRequest[]> {

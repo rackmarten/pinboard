@@ -18,9 +18,8 @@ const latestActivity = ref<Record<number, TaskEvent | undefined>>({});
 async function refreshLatestActivity(currentTasks: TaskSummary[]): Promise<void> {
   const entries = await Promise.all(
     currentTasks.map(async (t) => {
-      const events = await getEvents(t.id).catch(() => []);
-      const activity = events.filter((e) => e.eventType === "activity");
-      return [t.id, activity[activity.length - 1]] as const;
+      const [latest] = await getEvents(t.id, { type: "activity", limit: 1 }).catch(() => []);
+      return [t.id, latest] as const;
     }),
   );
   latestActivity.value = Object.fromEntries(entries);

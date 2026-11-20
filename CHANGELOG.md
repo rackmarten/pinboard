@@ -77,6 +77,13 @@ publishes the container image `ghcr.io/rackmarten/pinboard` at that version.
   for clients that accept it. JSON responses carry an ETag and
   `cache-control: no-cache`, so a poll that finds nothing new gets an
   empty 304 instead of the whole list again.
+- A task's page and the Workers view poll only the tail of a task's
+  activity: `GET /tasks/:id/events` takes `type` and `limit` (the newest
+  `limit` events, at most 500, oldest first), and task events are indexed
+  by task. On a long-running task the page's 5-second events poll went from
+  about 85 KB gzipped to 7 KB, and Workers' per-task poll from 85 KB to
+  under 300 bytes. Without `limit` the route still returns everything.
+  `scripts/measure-polls.sh` measures every polled endpoint's size and time.
 - A run's budget is now $2 per effort point (was $1), with the ceiling
   raised from $10 to $26, so effort 3 gets $6 and effort 8 gets $16.
 - Cost estimates now scale with a task's effort, on by default. A task with
