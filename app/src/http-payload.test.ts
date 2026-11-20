@@ -3,12 +3,12 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { gunzipSync } from "node:zlib";
 import { test } from "node:test";
-import Fastify, { type FastifyInstance } from "fastify";
+import type { FastifyInstance } from "fastify";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createApp } from "@rackmarten/server-kit";
-import { etagMatches, registerApiPayloadHooks, registerCompression, registerHttpLayer, stripServerOnly } from "./http-payload.js";
+import { registerApiPayloadHooks, stripServerOnly } from "./http-payload.js";
 
 // A task list big enough to cross compress's default threshold.
 const rows = Array.from({ length: 200 }, (_, i) => ({
@@ -18,13 +18,14 @@ const rows = Array.from({ length: 200 }, (_, i) => ({
   keywords: "'longer':3 'repeat':8 'task':1",
 }));
 
-async function buildApp(): Promise<FastifyInstance> {
-  const app = Fastify();
-  // Routes registered before compression don't get it, which is why
-  // index.ts registers the PWA itself, after registerCompression.
-  app.get("/early", async () => ({ text: "x".repeat(4096) }));
-  await registerCompression(app);
-  app.get("/late", async () => ({ text: "x".repeat(4096) }));
+// Wired like index.ts: createApp (compression, ETags, optionally the PWA),
+// then the API under /api with the payload hooks.
+async function buildApp(spaRoot?: string): Promise<FastifyInstance> {
+  const app = await createApp({
+    auth: { strategy: "tailnet-trust" },
+    logger: false,
+    ...(spaRoot ? { spa: { root: spaRoot } } : {}),
+  });
   await app.register(
     async (api) => {
       registerApiPayloadHooks(api);
@@ -86,7 +87,7 @@ test("API responses never carry keywords: list, detail and embedded rows", async
   await app.close();
 });
 
-test("responses are gzip/brotli compressed when the client accepts it, on routes registered after it", async () => {
+test("API responses are gzip/brotli compressed when the client accepts it", async () => {
   const app = await buildApp();
   const gz = await app.inject({ method: "GET", url: "/api/tasks", headers: { "accept-encoding": "gzip" } });
   assert.equal(gz.headers["content-encoding"], "gzip");
@@ -100,10 +101,6 @@ test("responses are gzip/brotli compressed when the client accepts it, on routes
   const plain = await app.inject({ method: "GET", url: "/api/tasks" });
   assert.equal(plain.headers["content-encoding"], undefined);
 
-  const late = await app.inject({ method: "GET", url: "/late", headers: { "accept-encoding": "gzip" } });
-  assert.equal(late.headers["content-encoding"], "gzip");
-  const early = await app.inject({ method: "GET", url: "/early", headers: { "accept-encoding": "gzip" } });
-  assert.equal(early.headers["content-encoding"], undefined);
   await app.close();
 });
 
@@ -158,34 +155,21 @@ test("the app wired like index.ts compresses the PWA: index, deep links and asse
   mkdirSync(path.join(root, "assets"));
   writeFileSync(path.join(root, "index.html"), `<!doctype html><title>t</title>${"<div></div>".repeat(500)}`);
   writeFileSync(path.join(root, "assets", "app.js"), `console.log(${JSON.stringify("x".repeat(5000))});`);
-  const app = await createApp({ auth: { strategy: "tailnet-trust" }, logger: false });
-  await registerHttpLayer(app, root);
-  await app.register(
-    async (api) => {
-      registerApiPayloadHooks(api);
-      api.get("/tasks", async () => rows.map((r) => ({ ...r })));
-    },
-    { prefix: "/api" },
-  );
+  const app = await buildApp(root);
   try {
     for (const url of ["/", "/tasks/12", "/assets/app.js", "/api/tasks"]) {
       const res = await app.inject({ method: "GET", url, headers: { "accept-encoding": "br, gzip" } });
       assert.equal(res.statusCode, 200, url);
       assert.equal(res.headers["content-encoding"], "br", `${url} not compressed`);
     }
+    const asset = await app.inject({ method: "GET", url: "/assets/app.js" });
+    assert.equal(asset.headers["cache-control"], "public, max-age=31536000, immutable");
+    const index = await app.inject({ method: "GET", url: "/tasks/12" });
+    assert.ok(!String(index.headers["cache-control"]).includes("immutable"));
   } finally {
     await app.close();
     rmSync(root, { recursive: true, force: true });
   }
-});
-
-test("etagMatches: weak comparison, lists and *", () => {
-  assert.equal(etagMatches(undefined, 'W/"a"'), false);
-  assert.equal(etagMatches('W/"a"', 'W/"a"'), true);
-  assert.equal(etagMatches('"a"', 'W/"a"'), true);
-  assert.equal(etagMatches('"b", W/"a"', 'W/"a"'), true);
-  assert.equal(etagMatches("*", 'W/"a"'), true);
-  assert.equal(etagMatches('"b"', 'W/"a"'), false);
 });
 
 test("only a successful GET/HEAD becomes a 304, never an error or a write", async () => {
