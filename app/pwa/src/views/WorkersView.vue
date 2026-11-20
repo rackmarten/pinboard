@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from "vue";
-import { getEvents, getProjects, getTasks, requestControl, type Project, type Task, type TaskEvent } from "../api.js";
+import { getEvents, getProjects, getTaskSummaries, requestControl, type Project, type TaskSummary, type TaskEvent } from "../api.js";
 import { usePolling } from "../composables/usePolling.js";
 import { statusColor, taskTypeIcon } from "../display.js";
 
-const tasks = ref<Task[]>([]);
+const tasks = ref<TaskSummary[]>([]);
 const projects = ref<Project[]>([]);
 const loading = ref(false);
 const error = ref<string | null>(null);
@@ -15,7 +15,7 @@ const now = ref(Date.now());
 // task's own detail page for its full activity log.
 const latestActivity = ref<Record<number, TaskEvent | undefined>>({});
 
-async function refreshLatestActivity(currentTasks: Task[]): Promise<void> {
+async function refreshLatestActivity(currentTasks: TaskSummary[]): Promise<void> {
   const entries = await Promise.all(
     currentTasks.map(async (t) => {
       const events = await getEvents(t.id).catch(() => []);
@@ -30,7 +30,7 @@ async function load(): Promise<void> {
   loading.value = true;
   error.value = null;
   try {
-    tasks.value = await getTasks({ status: ["executing"] });
+    tasks.value = await getTaskSummaries({ status: ["executing"] });
     await refreshLatestActivity(tasks.value);
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
@@ -45,7 +45,7 @@ onMounted(async () => {
 });
 
 usePolling(() =>
-  getTasks({ status: ["executing"] })
+  getTaskSummaries({ status: ["executing"] })
     .then(async (t) => {
       tasks.value = t;
       await refreshLatestActivity(t);
@@ -70,23 +70,23 @@ function projectName(id: number): string {
   return projects.value.find((p) => p.id === id)?.name ?? `#${id}`;
 }
 
-function leaseLive(task: Task): boolean {
+function leaseLive(task: TaskSummary): boolean {
   return !!task.leaseExpiresAt && new Date(task.leaseExpiresAt).getTime() > now.value;
 }
 
-function leaseRemaining(task: Task): string {
+function leaseRemaining(task: TaskSummary): string {
   if (!task.leaseExpiresAt) return "no lease";
   const ms = new Date(task.leaseExpiresAt).getTime() - now.value;
   if (ms <= 0) return "lease expired - stale, reclaimable";
   return `lease renews in ${Math.round(ms / 1000)}s`;
 }
 
-function elapsedSince(task: Task): string {
+function elapsedSince(task: TaskSummary): string {
   const ms = now.value - new Date(task.updatedAt).getTime();
   return `${Math.max(0, Math.round(ms / 1000))}s since last update`;
 }
 
-async function control(task: Task, action: "stop" | "kill"): Promise<void> {
+async function control(task: TaskSummary, action: "stop" | "kill"): Promise<void> {
   acting.value = task.id;
   error.value = null;
   try {

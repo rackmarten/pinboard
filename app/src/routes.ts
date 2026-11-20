@@ -387,6 +387,23 @@ const JOURNALED_TASK_FIELDS = [
 // a task row: skipped at the query too, not just by http-payload.ts's
 // response strip.
 const { keywords: _keywords, ...taskListColumns } = getTableColumns(tasks);
+// GET /tasks?view=summary: what the PWA's lists show, without the long text
+// (description, repair notes) and the root-grant and session fields only the
+// detail view and foreman read.
+const {
+  description: _description,
+  repairReason: _repairReason,
+  repairContext: _repairContext,
+  rootScope: _rootScope,
+  rootGrantCtids: _rootGrantCtids,
+  rootGrantExpiresAt: _rootGrantExpiresAt,
+  rootGrantedAt: _rootGrantedAt,
+  rootGrantedBy: _rootGrantedBy,
+  claudeSessionId: _claudeSessionId,
+  claudeSessionLicenseId: _claudeSessionLicenseId,
+  activeWorktreeName: _activeWorktreeName,
+  ...taskSummaryColumns
+} = taskListColumns;
 
 // config screens (agents, licenses, routing rules, settings,
 // budget periods, labels) journaled by one hook rather than one call per
@@ -647,10 +664,16 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       hasActiveWorktree?: string;
       // list a story's children.
       parentTaskId?: string;
-      // top-bar global search - matches task ID (exact) or, since
-      // #335, keywords (title + description, diacritic-free prefix words).
+      // top-bar global search - matches task ID (exact, "#12" too) or,
+      // since #335, keywords (title + description, diacritic-free prefix words).
       q?: string;
+      // done tasks updated after this ISO timestamp (the inbox's "finished
+      // since your last visit").
+      doneSince?: string;
+      // "summary" drops the long text and root-grant fields (taskSummaryColumns).
+      view?: string;
     };
+    if (q.view !== undefined && q.view !== "summary") throw badRequest("view must be summary");
     const conditions = [];
     // projectId doubles as a comma-separated set (the Task List
     // view's default scope from the Projects screen's multi-select) - an
@@ -681,20 +704,34 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       const childIds = await childIdsOf(Number(q.parentTaskId));
       conditions.push(childIds.length ? inArray(tasks.id, childIds) : eq(tasks.id, -1));
     }
+    if (q.doneSince !== undefined) {
+      const since = new Date(q.doneSince);
+      if (!q.doneSince || Number.isNaN(since.getTime())) throw badRequest("doneSince must be an ISO timestamp");
+      conditions.push(eq(tasks.status, "done"), gt(tasks.updatedAt, since));
+    }
     const searchTerm = q.q?.trim();
     if (searchTerm) {
-      const taskId = Number(searchTerm);
+      const taskId = Number(searchTerm.replace(/^#/, ""));
       const textMatch = keywordSearch(tasks.keywords, searchTerm) ?? sqlRaw`false`;
       conditions.push(Number.isInteger(taskId) ? or(eq(tasks.id, taskId), textMatch)! : textMatch);
     }
 
     const rows = await db
-      .select(taskListColumns)
+      .select(q.view === "summary" ? taskSummaryColumns : taskListColumns)
       .from(tasks)
       .where(conditions.length ? and(...conditions) : undefined)
       .orderBy(desc(tasks.priority), desc(tasks.createdAt));
     const parents = await parentIdsFor(rows.map((t) => t.id));
     return (await withEffectiveReasoningEffort(rows)).map((t) => ({ ...t, parentTaskId: parents.get(t.id) ?? null }));
+  });
+
+  // task counts by status and project, for the Dashboard: one small row
+  // per (status, project) pair instead of every task.
+  app.get("/tasks/counts", async () => {
+    return db
+      .select({ status: tasks.status, projectId: tasks.projectId, count: sqlRaw<number>`count(*)::int` })
+      .from(tasks)
+      .groupBy(tasks.status, tasks.projectId);
   });
 
   app.post("/tasks", async (req, reply) => {
@@ -761,7 +798,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     // the next attempt's prompt. stackOn: in a playtest project, the
     // dependency whose PR branch foreman cuts this task's branch from.
     const [withEffort] = await withEffectiveReasoningEffort([task]);
-    return { ...withEffort, labels: taskLabelRows, asks: await asksForTask(id), stackOn: await stackOnFor(id) };
+    const parentTaskId = (await parentIdsFor([id])).get(id) ?? null;
+    return { ...withEffort, parentTaskId, labels: taskLabelRows, asks: await asksForTask(id), stackOn: await stackOnFor(id) };
   });
 
   app.patch("/tasks/:id", async (req, reply) => {

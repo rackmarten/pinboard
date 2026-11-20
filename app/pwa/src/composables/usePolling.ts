@@ -6,16 +6,23 @@ import { onMounted, onUnmounted } from "vue";
 // clients polling every few seconds needs anything heavier.
 const DEFAULT_INTERVAL_MS = 5_000;
 
+// A hidden tab (phone locked, app in the background) skips its ticks, and
+// catches up with one run as soon as it is visible again.
 export function usePolling(callback: () => void | Promise<void>, intervalMs = DEFAULT_INTERVAL_MS): void {
   let timer: ReturnType<typeof setInterval> | undefined;
+  const onVisibilityChange = (): void => {
+    if (!document.hidden) void callback();
+  };
 
   onMounted(() => {
     timer = setInterval(() => {
-      void callback();
+      if (!document.hidden) void callback();
     }, intervalMs);
+    document.addEventListener("visibilitychange", onVisibilityChange);
   });
 
   onUnmounted(() => {
     if (timer) clearInterval(timer);
+    document.removeEventListener("visibilitychange", onVisibilityChange);
   });
 }

@@ -146,9 +146,10 @@ the root. Old root API calls are no longer aliased.
 | `GET /projects` / `POST /projects` | List / create projects (`localPath` is the local checkout's path relative to `work`'s workspace root, e.g. `my-org/my-repo`; used by `work plan sync`) |
 | `GET /projects/:id` / `PATCH /projects/:id` | Read / update a project. `reviewMode` is `standard` or `playtest` (400 otherwise). `defaultReasoningEffort` is `medium`, `high` or `null` (see "Reasoning effort") |
 | `GET /projects/:id/handoffs?limit=` | Latest handoffs for a project, most recent first - powers `work plan sync` |
-| `GET /tasks?projectId=&status=&taskType=&executorMode=&parentTaskId=` | Filtered task list. Each row carries `parentTaskId` (from `parent`/`child` relations, `null` if none); `parentTaskId=` lists that task's children |
+| `GET /tasks?projectId=&status=&taskType=&executorMode=&parentTaskId=&q=&doneSince=&view=` | Filtered task list. Each row carries `parentTaskId` (from `parent`/`child` relations, `null` if none); `parentTaskId=` lists that task's children. `q` matches the id (`12` or `#12`) or title and description keywords. `doneSince=<ISO time>` keeps `done` tasks updated after it. `view=summary` leaves out `description`, the repair notes, the root-grant and session fields, which is what the PWA's lists ask for |
+| `GET /tasks/counts` | Task counts as `[{status, projectId, count}]`, for the Dashboard |
 | `POST /tasks` | Create a task. `status`/`taskType`/`executorMode` must be known values (list in `app/src/task-model.ts`) or it's a 400; `status: "backlog"` is accepted as an alias of `defined`. `reasoningEffort` is `medium`, `high` or `null`. Same rules on `PATCH /tasks/:id` |
-| `GET /tasks/:id` | Task detail, including its labels, open asks and `stackOn` (see "Playtest review") |
+| `GET /tasks/:id` | Task detail, including its `parentTaskId`, labels, open asks and `stackOn` (see "Playtest review") |
 | `PATCH /tasks/:id` | Update a task. When a child of a `story` task reaches `done`/`rejected` (here, via `/complete` or the pipeline) and all its siblings are too, the story moves to `done` with a `status` event from `system`/`pinboard`. A `story` is never ranked runnable by `/plan` |
 | `GET /tasks/:id/comments` / `POST /tasks/:id/comments` | Task discussion thread |
 | `GET /tasks/:id/root-grant` | Root grant state: `{ active, ctids, expiresAt, grantedAt, grantedBy }`. What a root proxy asks before every call |

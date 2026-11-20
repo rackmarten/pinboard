@@ -11,18 +11,18 @@ import {
   createChatThread,
   getAsks,
   getHandoffs,
-  getTasks,
+  getTaskSummaries,
   sendChatMessage,
   vetoAsk,
   type Ask,
-  type Task,
+  type TaskSummary,
 } from "../api.js";
 import { startAskChat } from "../ask-chat.js";
 import { usePolling } from "../composables/usePolling.js";
 import AskCard from "../components/AskCard.vue";
 import ReviewSection from "../components/ReviewSection.vue";
 import { renderDescriptionHtml } from "../description-html.js";
-import { LAST_VISIT_KEY, createDecideQueue, doneSince, recentAssumptions } from "../inbox.js";
+import { LAST_VISIT_KEY, createDecideQueue, recentAssumptions } from "../inbox.js";
 
 const error = ref<string | null>(null);
 const busyAsk = ref<number | null>(null);
@@ -63,7 +63,7 @@ async function resolveInChat(): Promise<void> {
 }
 
 const assumptions = ref<Ask[]>([]);
-const done = ref<Task[]>([]);
+const done = ref<TaskSummary[]>([]);
 const vetoing = ref<number | null>(null);
 const vetoText = ref("");
 
@@ -74,9 +74,12 @@ const lastVisit = Number(localStorage.getItem(LAST_VISIT_KEY)) || Date.now() - 2
 onUnmounted(() => localStorage.setItem(LAST_VISIT_KEY, String(Date.now())));
 
 async function loadFyi(): Promise<void> {
-  const [asks, doneTasks] = await Promise.all([getAsks(["open", "accepted"]), getTasks({ status: ["done"] })]);
+  const [asks, doneTasks] = await Promise.all([
+    getAsks(["open", "accepted"]),
+    getTaskSummaries({ doneSince: new Date(lastVisit).toISOString() }),
+  ]);
   assumptions.value = recentAssumptions(asks, Date.now());
-  done.value = doneSince(doneTasks, lastVisit);
+  done.value = doneTasks;
 }
 
 async function load(): Promise<void> {

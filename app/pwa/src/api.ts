@@ -146,7 +146,7 @@ export interface Task {
   title: string;
   description: string | null;
   taskType: string;
-  // set on GET /tasks rows (from parent/child relations), absent on GET /tasks/:id.
+  // from parent/child relations, on GET /tasks rows and GET /tasks/:id.
   parentTaskId?: number | null;
   status: string;
   executorMode: string;
@@ -182,6 +182,13 @@ export interface Task {
   createdAt: string;
   updatedAt: string;
 }
+
+// a GET /tasks?view=summary row: what the lists show, without the long text
+// and root-grant fields.
+export type TaskSummary = Omit<
+  Task,
+  "description" | "repairReason" | "repairContext" | "rootScope" | "rootGrantCtids" | "rootGrantExpiresAt" | "rootGrantedAt" | "rootGrantedBy"
+>;
 
 export interface TaskDetail extends Task {
   labels: { id: number; name: string; color: string | null }[];
@@ -286,9 +293,13 @@ export interface TaskFilter {
   q?: string;
   // children of one task (a story's children on its detail view).
   parentTaskId?: number;
+  // done tasks updated after this time (ISO), the inbox's "since last visit".
+  doneSince?: string;
 }
 
-export function getTasks(filter: TaskFilter = {}): Promise<Task[]> {
+// every list screen's fetch: summary rows only, the full row comes from
+// getTask on the detail view.
+export function getTaskSummaries(filter: TaskFilter = {}): Promise<TaskSummary[]> {
   const params = new URLSearchParams();
   if (filter.projectId) {
     params.set("projectId", String(filter.projectId));
@@ -303,8 +314,19 @@ export function getTasks(filter: TaskFilter = {}): Promise<Task[]> {
   if (filter.executorMode) params.set("executorMode", filter.executorMode);
   if (filter.q) params.set("q", filter.q);
   if (filter.parentTaskId) params.set("parentTaskId", String(filter.parentTaskId));
-  const qs = params.toString();
-  return api(`/tasks${qs ? `?${qs}` : ""}`);
+  if (filter.doneSince) params.set("doneSince", filter.doneSince);
+  params.set("view", "summary");
+  return api(`/tasks?${params}`);
+}
+
+export interface TaskCount {
+  status: string;
+  projectId: number;
+  count: number;
+}
+
+export function getTaskCounts(): Promise<TaskCount[]> {
+  return api("/tasks/counts");
 }
 
 export interface TaskInput {

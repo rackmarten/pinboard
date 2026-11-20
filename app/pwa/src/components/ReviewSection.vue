@@ -9,13 +9,13 @@ import {
   getHandoffs,
   getProjects,
   getPullRequests,
-  getTasks,
+  getTaskSummaries,
   rejectTask,
   updateTask,
   type ChecklistItem,
   type Project,
   type PullRequest,
-  type Task,
+  type TaskSummary,
 } from "../api.js";
 import { usePolling } from "../composables/usePolling.js";
 import TaskPriorityChip from "../components/TaskPriorityChip.vue";
@@ -42,11 +42,11 @@ import { REVIEW_STATUSES, handoffTldr } from "../inbox.js";
 // opening its PR is exactly the mistake the hold exists to prevent.
 const QUEUE_STATUSES = REVIEW_STATUSES;
 
-function isPreMergeHold(task: Task): boolean {
+function isPreMergeHold(task: TaskSummary): boolean {
   return task.status === "awaiting_review";
 }
 
-const tasks = ref<Task[]>([]);
+const tasks = ref<TaskSummary[]>([]);
 const projects = ref<Project[]>([]);
 const loading = ref(false);
 const error = ref<string | null>(null);
@@ -82,14 +82,14 @@ async function loadChecklists(): Promise<void> {
 
 const rejectDialog = ref(false);
 useBackClose(rejectDialog);
-const rejectTarget = ref<Task | null>(null);
+const rejectTarget = ref<TaskSummary | null>(null);
 const rejectReason = ref("");
 
 async function load(): Promise<void> {
   loading.value = true;
   error.value = null;
   try {
-    tasks.value = await getTasks({ status: QUEUE_STATUSES });
+    tasks.value = await getTaskSummaries({ status: QUEUE_STATUSES });
     await Promise.all([loadPullRequests(), loadTldrs(), loadChecklists()]);
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
@@ -116,7 +116,7 @@ onMounted(async () => {
 // Silent - a queue that's actively being worked from a phone shouldn't
 // flicker its progress bar every 5s.
 usePolling(() =>
-  getTasks({ status: QUEUE_STATUSES })
+  getTaskSummaries({ status: QUEUE_STATUSES })
     .then((t) => {
       tasks.value = t;
       return Promise.all([loadPullRequests(), loadTldrs(), loadChecklists()]).then(() => {});
@@ -132,11 +132,11 @@ function projectName(id: number): string {
 // needs a comment; the comment is posted first, then the approve runs.
 const approveDialog = ref(false);
 useBackClose(approveDialog);
-const approveTarget = ref<Task | null>(null);
+const approveTarget = ref<TaskSummary | null>(null);
 const approveComment = ref("");
 const approveUnchecked = ref<string[]>([]);
 
-async function approve(task: Task): Promise<void> {
+async function approve(task: TaskSummary): Promise<void> {
   const items = checklists.value[task.id] ?? [];
   if (!needsApproveWarning(items)) return runApprove(task);
   approveTarget.value = task;
@@ -161,7 +161,7 @@ async function confirmApprove(): Promise<void> {
   await runApprove(task);
 }
 
-async function runApprove(task: Task): Promise<void> {
+async function runApprove(task: TaskSummary): Promise<void> {
   acting.value = task.id;
   error.value = null;
   try {
@@ -187,7 +187,7 @@ async function runApprove(task: Task): Promise<void> {
 }
 
 // the explicit escape hatch past /complete's open-PR guard.
-async function doneWithoutMerging(task: Task): Promise<void> {
+async function doneWithoutMerging(task: TaskSummary): Promise<void> {
   acting.value = task.id;
   error.value = null;
   try {
@@ -201,7 +201,7 @@ async function doneWithoutMerging(task: Task): Promise<void> {
   }
 }
 
-function openReject(task: Task): void {
+function openReject(task: TaskSummary): void {
   rejectTarget.value = task;
   rejectReason.value = "";
   rejectDialog.value = true;
