@@ -13,6 +13,12 @@ publishes the container image `ghcr.io/rackmarten/pinboard` at that version.
   (done tasks finished after it) and `GET /tasks/counts` (counts by status
   and project). `GET /tasks/:id` now carries `parentTaskId`, and `q` also
   matches `#12`.
+- README screenshots (dark and light task list, task detail, inbox, plan,
+  governor, and two at phone width) and `scripts/screenshots.sh`, which
+  regenerates them from fictional demo data: it builds a throwaway stack
+  under its own compose project, seeds it through the API
+  (`scripts/demo-seed.mjs`), captures with headless Chromium in the pinned
+  Playwright image and tears everything down again, volumes included.
 - `GET /events` takes `since`/`until` (ISO dates, a malformed one is a 400)
   and `to=<status>`, which keeps only status transitions into that status,
   so "every task that went to rework this week, with its reason" is one
