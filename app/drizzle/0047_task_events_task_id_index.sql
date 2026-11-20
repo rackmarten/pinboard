@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS "task_events_task_id_idx" ON "task_events" USING btree ("task_id","id");

@@ -83,6 +83,23 @@ function date(v: string | undefined, name: string): Date | undefined {
   return d;
 }
 
+// GET /tasks/:id/events query string. `limit` asks for the newest that many
+// events (of `type`, if given) instead of the task's whole history, which on
+// a long-running task is hundreds of kilobytes of activity lines re-sent on
+// every 5s poll. Without `limit` the route answers everything, as before.
+export const TASK_EVENTS_MAX_LIMIT = 500;
+
+export interface TaskEventsQuery {
+  type?: string;
+  limit?: number;
+}
+
+export function parseTaskEventsQuery(q: Record<string, string | undefined>): TaskEventsQuery {
+  const limit = num(q.limit);
+  if (limit !== undefined && !(Number.isInteger(limit) && limit > 0)) throw new Error("limit must be a positive integer");
+  return { type: q.type || undefined, limit: limit === undefined ? undefined : Math.min(limit, TASK_EVENTS_MAX_LIMIT) };
+}
+
 // GET /events query string -> JournalQuery. Throws on a malformed date, so the
 // route answers 400 rather than silently ignoring the window.
 export function parseJournalQuery(q: Record<string, string | undefined>): JournalQuery {

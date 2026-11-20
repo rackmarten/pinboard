@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import Fastify from "fastify";
 import { sql } from "./db/client.js";
-import { parseJournalQuery, TRANSITION_EVENT_TYPES } from "./journal.js";
+import { parseJournalQuery, parseTaskEventsQuery, TASK_EVENTS_MAX_LIMIT, TRANSITION_EVENT_TYPES } from "./journal.js";
 import { registerRoutes } from "./routes.js";
 
 // Query parsing only: a malformed date is refused before any query runs, so
@@ -45,4 +45,22 @@ test("GET /events answers 400 for a malformed since", async () => {
   const res = await app.inject({ method: "GET", url: "/events?since=yesterday&to=rework" });
   assert.equal(res.statusCode, 400);
   assert.match(res.json().message ?? res.json().error, /since must be an ISO date/);
+});
+
+test("parseTaskEventsQuery reads the type and limit, and caps the limit", () => {
+  assert.deepEqual(parseTaskEventsQuery({ type: "activity", limit: "50" }), { type: "activity", limit: 50 });
+  assert.deepEqual(parseTaskEventsQuery({ limit: "100000" }), { type: undefined, limit: TASK_EVENTS_MAX_LIMIT });
+});
+
+test("parseTaskEventsQuery leaves a bare request unbounded", () => {
+  assert.deepEqual(parseTaskEventsQuery({}), { type: undefined, limit: undefined });
+  assert.deepEqual(parseTaskEventsQuery({ type: "", limit: "" }), { type: undefined, limit: undefined });
+});
+
+test("GET /tasks/:id/events answers 400 for a limit that isn't a positive integer", async () => {
+  for (const limit of ["0", "-3", "1.5", "lots"]) {
+    const res = await app.inject({ method: "GET", url: `/tasks/1/events?limit=${limit}` });
+    assert.equal(res.statusCode, 400, limit);
+    assert.match(res.json().message ?? res.json().error, /limit must be a positive integer/);
+  }
 });

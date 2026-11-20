@@ -29,7 +29,7 @@ import { getCostRollup, getUsageSummary, InteractiveDedupe, licenseIdForLinuxUse
 import { normalizeTaskEnums, parentMap, storyShouldComplete, isTerminalStatus, dependencySatisfied, isReviewMode, REVIEW_MODES, isReasoningEffort, REASONING_EFFORTS, effectiveReasoningEffort } from "./task-model.js";
 import { mergeBlockers, reworkStackedDependents, stackOnFor } from "./dependencies.js";
 import { readinessApplies, readinessFailures, toWorkspaceRepos, type ReadinessTask, type WorkspaceRepo } from "./readiness.js";
-import { listJournal, parseJournalQuery, recordEvent as recordJournalEvent, unreadNotificationCount } from "./journal.js";
+import { listJournal, parseJournalQuery, parseTaskEventsQuery, recordEvent as recordJournalEvent, unreadNotificationCount } from "./journal.js";
 import { pushConfigured, sendTestPush } from "./push.js";
 import { config } from "./config.js";
 import { actorFromHeaders, identitySettings } from "./identity.js";
@@ -967,9 +967,27 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       .where(state ? eq(pullRequests.state, state) : undefined);
   });
 
+  // `?type=activity&limit=50` is the tail the task detail and workers views
+  // poll; taken newest-first and reversed, so the response is oldest-first
+  // either way (same shape as the chat events route).
   app.get("/tasks/:id/events", async (req) => {
     const id = Number((req.params as { id: string }).id);
-    return db.select().from(taskEvents).where(eq(taskEvents.taskId, id)).orderBy(taskEvents.createdAt);
+    let query;
+    try {
+      query = parseTaskEventsQuery(req.query as Record<string, string | undefined>);
+    } catch (err) {
+      throw badRequest((err as Error).message);
+    }
+    const conditions = [eq(taskEvents.taskId, id)];
+    if (query.type) conditions.push(eq(taskEvents.eventType, query.type));
+    if (query.limit === undefined) return db.select().from(taskEvents).where(and(...conditions)).orderBy(taskEvents.createdAt);
+    const newest = await db
+      .select()
+      .from(taskEvents)
+      .where(and(...conditions))
+      .orderBy(desc(taskEvents.id))
+      .limit(query.limit);
+    return newest.reverse();
   });
 
   // I19: live turn-by-turn activity from a running headless session (foreman's

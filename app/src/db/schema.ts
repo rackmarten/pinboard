@@ -558,6 +558,8 @@ export const taskEvents = pgTable(
   (table) => [
     index("task_events_created_at_idx").on(table.createdAt),
     index("task_events_project_id_idx").on(table.projectId, table.createdAt),
+    // a task's events: the detail and workers views poll their tail
+    index("task_events_task_id_idx").on(table.taskId, table.id),
   ],
 );
 

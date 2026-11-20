@@ -150,7 +150,10 @@ internet.
 The author runs pinboard on a dedicated host with `scripts/deploy.sh` (builds
 from source via `docker-compose.dev.yml`, never starts the runner) and checks
 it with `scripts/healthcheck.sh`; foreman runs on a separate machine from its
-own compose file.
+own compose file. `scripts/measure-polls.sh <base-url> <task-id>
+<chat-thread-id>` prints a table of every endpoint the PWA polls (raw and
+gzip size, fastest of three round trips); point it at the busiest task and
+thread to spot a poll that has grown heavy.
 
 - Hostname: `pinboard`
 - Working directory: `/app`
@@ -205,7 +208,7 @@ the root. Old root API calls are no longer aliased.
 | `POST /asks/:id/answer` | `{option?, text?}` (a question needs one of them; an assumption answered this way is `accepted`). Posts the answer into the ask's thread (or the task's latest one) as a human message, so a session waiting in `work task ask` picks it up, and moves a `needs_input` task back to `queued` (a `root-access` task with an ended grant lands in `rework`, as with `/pipeline`). 409 once already answered |
 | `POST /asks/answer-recommended` | Answers every open question with its recommended option |
 | `POST /asks/:id/veto` | Assumptions only: `{text}` (required). Marks it `vetoed`, posts the veto into the thread, and moves the task to `rework` with the text as the status event's reason |
-| `GET /tasks/:id/events` | The task's append-only audit trail (claim/comment/handoff/complete, each with actor provenance) |
+| `GET /tasks/:id/events?type=&limit=` | The task's append-only audit trail (claim/comment/handoff/complete, each with actor provenance), oldest first. `type` keeps one event type; `limit` (a positive integer, else a 400; above 500 it is capped at 500) keeps only the newest that many, which is what the PWA polls (`type=activity&limit=50` on a task's page, `limit=1` on Workers) |
 | `GET /tasks/:id/chat-thread` | I9: the task's current session chat thread (most recently updated), 404 if none - see `GET /chat/threads?taskId=` below |
 | `GET /chat/threads?projectId=&taskId=&status=&awaitingAgent=` / `POST /chat/threads` | I8/I9: chat threads - `taskId=<id>` filters to one task's session thread, `taskId=none` excludes task-scoped threads (used to keep I8's planning-chat poller and PWA list from touching them) |
 | `GET /chat/threads/:id/messages` / `POST /chat/threads/:id/messages` | Thread messages - posting flips `awaitingAgent` to whichever role didn't just speak |
