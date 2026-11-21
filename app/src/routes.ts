@@ -34,6 +34,7 @@ import { pushConfigured, sendTestPush } from "./push.js";
 import { config } from "./config.js";
 import { actorFromHeaders, identitySettings } from "./identity.js";
 import { asksForTask } from "./asks.js";
+import { loadNow, upsertSessionLinks } from "./now.js";
 import {
   ChatEventError,
   EVENTS_PER_THREAD_CAP,
@@ -1701,7 +1702,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       if (seen.duplicate) return reply.code(200).send({ id: seen.id, duplicate: true });
       let id: number | null;
       try {
-        id = await recordUsageEvent({ costUsd: body.costUsd, source: body.source, licenseId });
+        id = await recordUsageEvent({ costUsd: body.costUsd, source: body.source, licenseId, sessionId: body.sessionId });
       } catch (err) {
         interactiveDedupe.forget(body.sessionId, body.costUsd);
         throw err;
@@ -1710,6 +1711,38 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(201).send({ id, duplicate: false });
     },
   );
+
+  // an interactive Claude Code session touched these tasks (a hook that saw
+  // `work task show <id>` and the like). Unknown task ids are skipped; see
+  // now.ts's upsertSessionLinks.
+  app.post(
+    "/session-links",
+    {
+      schema: {
+        body: {
+          type: "object",
+          required: ["sessionId", "taskIds"],
+          additionalProperties: false,
+          properties: {
+            sessionId: { type: "string", minLength: 1 },
+            cwd: { type: "string" },
+            taskIds: { type: "array", maxItems: 200, items: { type: "integer", minimum: 1 } },
+            at: { type: "string", minLength: 1 },
+          },
+        },
+      },
+    },
+    async (req) => {
+      const body = req.body as { sessionId: string; cwd?: string; taskIds: number[]; at?: string };
+      const at = body.at === undefined ? new Date() : new Date(body.at);
+      if (Number.isNaN(at.getTime())) throw badRequest("at must be an ISO timestamp");
+      const linked = await upsertSessionLinks({ sessionId: body.sessionId, cwd: body.cwd, taskIds: body.taskIds, at });
+      return { linked };
+    },
+  );
+
+  // active stories with what each is waiting on, see now.ts.
+  app.get("/now", async () => loadNow());
 
   // cost per task, rolled up per project and per parent project.
   app.get("/usage/rollup", async () => getCostRollup());

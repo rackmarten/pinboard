@@ -460,7 +460,9 @@ export const budgetRateHistory = pgTable("budget_rate_history", {
 // The 0023 migration backfills every existing handoff; historical chat spend
 // cannot be backfilled per-turn (the deltas were never stored), so windows
 // before that migration under-count chat and are marked as such in the UI.
-export const usageEvents = pgTable("usage_events", {
+export const usageEvents = pgTable(
+  "usage_events",
+  {
   id: serial("id").primaryKey(),
   occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
   // Same text-for-money precedent as handoffs.costUsd - see the note there.
@@ -476,7 +478,13 @@ export const usageEvents = pgTable("usage_events", {
   // if an agent's license was ever reassigned later. See routes.ts's handoff
   // and chat-usage routes for how this is resolved on write.
   licenseId: integer("license_id").notNull().references(() => licenses.id),
-});
+  // the reporting Claude Code session, set only for source "interactive"
+  // (POST /usage). Lets GET /now sum a story's interactive spend through
+  // session_links below.
+  sessionId: text("session_id"),
+  },
+  (table) => [index("usage_events_session_id_idx").on(table.sessionId)],
+);
 
 // what Claude itself said about a 5h session boundary, recorded
 // whenever a run dies with "You've hit your session limit - resets <time>
@@ -908,4 +916,21 @@ export const activityMinutes = pgTable(
   },
   // (actor, minute) leads the key, which is what every read filters on
   (table) => [primaryKey({ columns: [table.actorKey, table.minute, table.kind, table.route, table.name] })],
+);
+
+// Which interactive Claude Code sessions touched which tasks (POST
+// /session-links, e.g. a hook that saw `work task show <id>`). One row per
+// (session, task); first/last seen widen on every report. GET /now reads it
+// for a story's recent sessions and, joined to usage_events.session_id, its
+// interactive spend.
+export const sessionLinks = pgTable(
+  "session_links",
+  {
+    sessionId: text("session_id").notNull(),
+    taskId: integer("task_id").notNull().references(() => tasks.id),
+    cwd: text("cwd"),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.sessionId, table.taskId] }), index("session_links_task_id_idx").on(table.taskId)],
 );

@@ -579,6 +579,7 @@ export async function recordUsageEvent(input: {
   taskId?: number | null;
   chatThreadId?: number | null;
   handoffId?: number | null;
+  sessionId?: string | null;
   occurredAt?: Date;
 }): Promise<number | null> {
   if (!Number.isFinite(input.costUsd) || input.costUsd <= 0) return null;
@@ -591,6 +592,7 @@ export async function recordUsageEvent(input: {
       taskId: input.taskId ?? null,
       chatThreadId: input.chatThreadId ?? null,
       handoffId: input.handoffId ?? null,
+      sessionId: input.sessionId ?? null,
       occurredAt: input.occurredAt,
     })
     .returning({ id: usageEvents.id });
