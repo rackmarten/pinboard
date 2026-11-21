@@ -24,6 +24,9 @@ export const ACTIVE_CHILD_STATUSES: ReadonlySet<string> = new Set([
 ]);
 // ... or when the story or a child saw activity this recently.
 export const NOW_ACTIVITY_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+// Sessions not seen for this long are left out of finishedSessions, so the
+// scan stays bounded as the link table grows.
+export const FINISHED_SESSIONS_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
 const RUNNING_STATUSES: ReadonlySet<string> = new Set(["executing"]);
 const REVIEW_STATUSES: ReadonlySet<string> = new Set(["review", "awaiting_review"]);
 const HUMAN_WAITING_STATUSES: ReadonlySet<string> = new Set(["queued", "defined"]);
@@ -273,10 +276,19 @@ async function relationsFor(ids: number[], side: "parent" | "child"): Promise<Ma
 
 // Every linked session is read, since an old finished session is as
 // archivable as a new one; the table holds one row per (session, task).
-export async function loadFinishedSessions(): Promise<FinishedSession[]> {
+export async function loadFinishedSessions(now = new Date()): Promise<FinishedSession[]> {
+  const cutoff = new Date(now.getTime() - FINISHED_SESSIONS_WINDOW_MS);
+  // Every link of each recently seen session, so an old link to an open story
+  // still keeps that session out of the list.
+  const recent = db
+    .select({ sessionId: sessionLinks.sessionId })
+    .from(sessionLinks)
+    .groupBy(sessionLinks.sessionId)
+    .having(sqlRaw`max(${sessionLinks.lastSeenAt}) >= ${cutoff.toISOString()}::timestamptz`);
   const links = await db
     .select({ sessionId: sessionLinks.sessionId, taskId: sessionLinks.taskId, cwd: sessionLinks.cwd, lastSeenAt: sessionLinks.lastSeenAt })
-    .from(sessionLinks);
+    .from(sessionLinks)
+    .where(inArray(sessionLinks.sessionId, recent));
   if (!links.length) return [];
   const taskIds = [...new Set(links.map((l) => l.taskId))];
   const parentOf = await relationsFor(taskIds, "child");
@@ -300,7 +312,7 @@ export async function loadNow(now = new Date()): Promise<NowResponse> {
       .select(nowTaskColumns)
       .from(tasks)
       .where(and(eq(tasks.taskType, "story"), notInArray(tasks.status, STORY_CLOSED_STATUSES))),
-    loadFinishedSessions(),
+    loadFinishedSessions(now),
   ]);
   if (!stories.length) return { generatedAt: now.toISOString(), stories: [], finishedSessions };
   const storyIds = stories.map((s) => s.id);

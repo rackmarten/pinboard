@@ -236,6 +236,8 @@ describe("against a real database", { skip: adminUrl ? false : "PINBOARD_TEST_DA
   test("GET /now lists the active story with progress, waiting, next, sessions, spend and finished sessions", async () => {
     await link({ sessionId: "s2", cwd: "/work/three", taskIds: [ids.review] });
     await link({ sessionId: "s3", cwd: "/work/four", taskIds: [ids.doneStory] });
+    // Last seen long before the finished-sessions window: left out.
+    await link({ sessionId: "s-old", cwd: "/work/old", taskIds: [ids.doneStory], at: "2020-01-01T00:00:00Z" });
     for (const [sessionId, costUsd] of [["s1", 0.5], ["s2", 1.25], ["s1", 0.25], ["s3", 9]] as const) {
       const res = await app.inject({ method: "POST", url: "/usage", payload: { costUsd, source: "interactive", linuxUser: "nowtester", sessionId } });
       assert.equal(res.statusCode, 201, res.body);
