@@ -8,6 +8,12 @@ publishes the container image `ghcr.io/rackmarten/pinboard` at that version.
 ## [Unreleased]
 
 ### Added
+- `POST /session-links` records which interactive Claude Code sessions
+  touched which tasks, and `GET /now` lists the stories in play right now:
+  progress, running children, what each is waiting on (open questions,
+  review, human tasks), the next queued child, recent sessions and their
+  interactive spend, plus finished sessions whose stories are all closed.
+  `POST /usage` now stores the reporting `sessionId` for that spend sum.
 - `GET /tasks?view=summary` (list rows without the description, repair
   notes, root-grant and session fields), `GET /tasks?doneSince=<ISO time>`
   (done tasks finished after it) and `GET /tasks/counts` (counts by status
