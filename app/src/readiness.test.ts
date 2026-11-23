@@ -90,7 +90,7 @@ test("unresolved-question markers fail", () => {
 });
 
 test("foreman's own handbacks into queued are not linted", () => {
-  assert.equal(readinessApplies("executing"), false);
+  assert.equal(readinessApplies("in_progress"), false);
   assert.equal(readinessApplies("needs_input"), false);
   assert.equal(readinessApplies("defined"), true);
   assert.equal(readinessApplies("rework"), true);

@@ -15,19 +15,16 @@ export type { ChatEvent } from "./chat-transcript.js";
 export const TASK_STATUSES = [
   "idea",
   "defined",
-  "planned",
   "decomposed",
   "queued",
-  "executing",
+  "in_progress",
   "needs_input",
-  "handoff",
   // the post-PR pipeline, between the agent opening a PR and a
   // human looking at the result - see app/src/pipeline.ts for what each one
   // means and which moves between them are legal. Driven by foreman's poller,
   // not by a person, so they show up here only to be rendered and filtered.
   "awaiting_ci",
   "awaiting_merge",
-  "awaiting_review",
   "deploying",
   "verifying",
   "review",
@@ -170,6 +167,9 @@ export interface Task {
   pipelineStageEnteredAt: string | null;
   repairReason: string | null;
   repairContext: string | null;
+  // why a task in `review` waits for a human before its PR merges
+  // (app/src/pipeline.ts's REVIEW_REASONS); null on any other review.
+  reviewReason: "migration" | "no_auto_deploy" | "production" | null;
   // CTIDs a `root-access` task wants root on, and the operator's
   // grant for them (written only by POST /tasks/:id/root-grant).
   rootScope: number[];
@@ -593,9 +593,8 @@ export function approveTask(taskId: number, actorName = "marek", force = false):
   });
 }
 
-// releasing a task the pipeline is holding for a human - today
-// that is only the `awaiting_review` hold before a migration is merged, which
-// resumes at `awaiting_merge`. Deliberately the same endpoint foreman's
+// approving a task in `review` whose PR is still open: it resumes at
+// `awaiting_merge` and the pipeline merges and deploys it. Deliberately the same endpoint foreman's
 // poller uses rather than a PATCH of the status, so a human release is
 // checked against the same transition table as a machine one.
 export function advancePipeline(taskId: number, to: string, actorName = "marek"): Promise<Task> {

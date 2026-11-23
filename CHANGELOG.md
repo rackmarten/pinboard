@@ -82,6 +82,17 @@ publishes the container image `ghcr.io/rackmarten/pinboard` at that version.
   never toward the period or session spend that gates dispatch.
 
 ### Changed
+- Task statuses: `planned`, `handoff` and `awaiting_review` are gone and
+  `executing` is now `in_progress`. `review` means one thing, a human
+  approving before the change lands: a green PR held for a human (a
+  migration diff, no auto-deploy, production) goes `awaiting_ci -> review`
+  with a `reviewReason` the review card shows, and there is no sign-off after
+  a deploy (`verifying -> done` for every executor mode, a merge with
+  nothing to deploy `-> done`). A handoff no longer changes the task's
+  status. Old status names are still accepted on the way in, and an older
+  foreman's pipeline moves are translated, so pinboard and foreman can
+  deploy in either order. Migration 0049 moves the stored rows (`handoff`
+  ones to `rework`, with a comment).
 - The PWA asks only for what each screen shows: lists fetch summary rows,
   the Dashboard fetches counts, the inbox only tasks done since the last
   visit, and a task's page no longer loads every task (its relation picker

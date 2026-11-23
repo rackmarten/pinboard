@@ -4,7 +4,7 @@
 import { computed, ref, type ComputedRef, type Ref } from "vue";
 import type { Ask, Handoff } from "./api.js";
 
-export const REVIEW_STATUSES = ["review", "awaiting_review"];
+export const REVIEW_STATUSES = ["review"];
 export const FYI_WINDOW_MS = 48 * 3600_000;
 export const LAST_VISIT_KEY = "pinboard.inbox.lastVisit";
 

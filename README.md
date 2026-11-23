@@ -183,7 +183,7 @@ the root. Old root API calls are no longer aliased.
 | `GET /projects/:id/handoffs?limit=` | Latest handoffs for a project, most recent first - powers `work plan sync` |
 | `GET /tasks?projectId=&status=&taskType=&executorMode=&parentTaskId=&q=&doneSince=&view=` | Filtered task list. Each row carries `parentTaskId` (from `parent`/`child` relations, `null` if none); `parentTaskId=` lists that task's children. `q` matches the id (`12` or `#12`) or title and description keywords. `doneSince=<ISO time>` keeps `done` tasks updated after it. `view=summary` leaves out `description`, the repair notes, the root-grant and session fields, which is what the PWA's lists ask for |
 | `GET /tasks/counts` | Task counts as `[{status, projectId, count}]`, for the Dashboard |
-| `POST /tasks` | Create a task. `status`/`taskType`/`executorMode` must be known values (list in `app/src/task-model.ts`) or it's a 400; `status: "backlog"` is accepted as an alias of `defined`. `reasoningEffort` is `medium`, `high` or `null`. Same rules on `PATCH /tasks/:id` |
+| `POST /tasks` | Create a task. `status`/`taskType`/`executorMode` must be known values (list in `app/src/task-model.ts`) or it's a 400; an old status name (`backlog`, `planned`, `executing`, ..., see "Task statuses") is rewritten to its current one. `reasoningEffort` is `medium`, `high` or `null`. Same rules on `PATCH /tasks/:id` |
 | `GET /tasks/:id` | Task detail, including its `parentTaskId`, labels, open asks and `stackOn` (see "Playtest review") |
 | `PATCH /tasks/:id` | Update a task. When a child of a `story` task reaches `done`/`rejected` (here, via `/complete` or the pipeline) and all its siblings are too, the story moves to `done` with a `status` event from `system`/`pinboard`. A `story` is never ranked runnable by `/plan` |
 | `GET /tasks/:id/comments` / `POST /tasks/:id/comments` | Task discussion thread |
@@ -201,12 +201,12 @@ the root. Old root API calls are no longer aliased.
 | `POST /notifications/:id/read` / `POST /notifications/read-all` | Mark read |
 | `POST /push/test` | Publish a test notification to pinboard's ntfy topic; `{ sent: true }`, 503 when ntfy isn't configured, 502 when the publish failed |
 | `POST /alerts/grafana` | Grafana webhook contact point: one task and push per alert, see "Grafana alerts" |
-| `POST /tasks/:id/claim` / `POST /tasks/:id/complete` | Zero-autonomy write path - body `{actorType, actorName}`, stamps a `task_events` row. `claim` also takes an optional `leaseSeconds` (I4a's agent-runner claim) and 409s while an existing lease is still live |
+| `POST /tasks/:id/claim` / `POST /tasks/:id/complete` | Zero-autonomy write path - body `{actorType, actorName}`, stamps a `task_events` row. `claim` moves the task to `in_progress`, also takes an optional `leaseSeconds` (I4a's agent-runner claim) and 409s while an existing lease is still live |
 | `POST /tasks/:id/reject` | I4b's review-queue reject - body `{actorType, actorName}`, moves the task back to `rework` |
 | `POST /tasks/:id/control` | I4c's running-workers stop/kill - body `{actorType, actorName, action: "stop"\|"kill"}`, sets `controlAction`/`controlRequestedAt` for `foreman`'s runner to notice and act on |
 | `GET /pipeline/next` | every task currently in the post-PR pipeline, with what a stateless poller needs to act - stage, when it entered it, attempt count, the project's slug/`localPath`/`autoDeployAllowed`, and the task's latest PR url/branch/repo. Oldest stage first, so a backlog drains in the order it built up. Nothing drives this yet; #154's increment 2 builds the poller |
-| `POST /tasks/:id/pipeline` | advance, park or hand back one task - body `{actorType, actorName, to, repairReason?, repairContext?}`. The legal moves live in `app/src/pipeline.ts` and are checked here in one place, so a poller bug can't walk a task into a state the UI has no meaning for; an illegal move is a 409 naming what *was* allowed. A handback to `queued` requires a `repairReason` (`ci_failed`/`merge_conflict`/`deploy_failed`) and carries the evidence in `repairContext`. a handback to `queued` is refused unless the task is `executorMode: agent`; a `human+agent` task is parked in `rework` with the same `repairReason`/`repairContext`, and a later PATCH from `rework` to `queued` keeps them (any other PATCH to `queued`/`rework` clears them). Records one `pipeline` task event per transition |
-| `POST /tasks/:id/handoff` | Records a `handoffs` row (usage fields, `next`, an optional markdown TL;DR `summary`, an optional review `checklist` (array of strings, at most 50), etc.) and moves the task to `handoff` - body as above plus the handoff fields and an optional `agentName` |
+| `POST /tasks/:id/pipeline` | advance, park or hand back one task - body `{actorType, actorName, to, repairReason?, repairContext?, reviewReason?}` (`reviewReason`: `migration`/`no_auto_deploy`/`production`, only with `to: review`). The legal moves live in `app/src/pipeline.ts` and are checked here in one place, so a poller bug can't walk a task into a state the UI has no meaning for; an illegal move is a 409 naming what *was* allowed. A handback to `queued` requires a `repairReason` (`ci_failed`/`merge_conflict`/`deploy_failed`) and carries the evidence in `repairContext`. a handback to `queued` is refused unless the task is `executorMode: agent`; a `human+agent` task is parked in `rework` with the same `repairReason`/`repairContext`, and a later PATCH from `rework` to `queued` keeps them (any other PATCH to `queued`/`rework` clears them). Records one `pipeline` task event per transition |
+| `POST /tasks/:id/handoff` | Records a `handoffs` row (usage fields, `next`, an optional markdown TL;DR `summary`, an optional review `checklist` (array of strings, at most 50), etc.) and leaves the task's status alone (a handoff is an event; the caller moves the task on) - body as above plus the handoff fields and an optional `agentName` |
 | `GET /tasks/:id/checklist` | The review checklist: `{handoffId, items: [{item, checked, note, checkedAt, checkedBy}]}`, the latest handoff's items merged with the reviewer's ticks. Ticks are stored per item text, so they survive a new handoff wherever an item is unchanged, and an item the new handoff dropped is no longer listed. `items` is empty when the latest handoff has no checklist |
 | `PATCH /tasks/:id/checklist` | Tick, untick or note one item - body `{actorType, actorName, item, checked?, note?}` (an empty `note` clears it). 400 for an item not on the latest checklist. Returns the merged checklist |
 | `POST /tasks/:id/asks` | a run's structured ask - `{kind: "question"\|"assumption", question, context?, options: [{label, rationale?, recommended?}], defaultOption?, threadId?}`. A question needs 2-4 options with exactly one `recommended`, or none for a free-text question; an assumption needs none. A new question notifies (kind `question`) with its text as the body. `GET /tasks/:id` returns open asks and those answered in the last 7 days as `asks` |
@@ -234,7 +234,7 @@ the root. Old root API calls are no longer aliased.
 | `GET /plan/gate/:taskId?licenseId=&override=` | Whether one specific task may start now - what `work task run <id>` asks, as opposed to `/plan/next`'s "pick me something". Same rules, evaluated with that task as the sole candidate. Same `licenseId` default as `/plan/next`. also returns `budgetUsd`, the `--max-budget-usd` that run may spend, sized from that task's own cost estimate (2x the estimate, floored at $2 and capped at $26 - see `cost-model.ts`'s `runBudgetForEstimate`). also floored at $2 per `estimatedEffort` point (effort 3 gets $6, effort 5 gets $10, effort 8 gets $16, capped at $26), since the estimate is the project mean and would otherwise give every task about $2 (`runBudgetForTask`). A task with no effort keeps the estimate-only budget. Present on refusals too, so a caller never needs a fallback constant |
 | `POST /usage` | Spend reported by an interactive Claude Code session (e.g. a session-end hook) - body `{costUsd (> 0), source: "interactive", linuxUser, sessionId}`. `linuxUser` picks the license whose `linuxUser` matches (unknown user: 400). Returns `201 {id}`; the same `(sessionId, costUsd)` posted again within a minute is not stored twice and returns `200 {id, duplicate: true}` (kept in memory, so a restart inside that minute can let one duplicate through). Recorded, not gated: it counts toward the governor's calibration and shows separately in the usage view (`GET /usage/summary`'s `interactive`), but never toward the period or session spend `GET /plan` reports and dispatch gates on. The `sessionId` is stored, so `GET /now` can sum a story's interactive spend |
 | `POST /session-links` | An interactive Claude Code session touched these tasks (e.g. a hook that saw `work task show <id>`) - body `{sessionId, cwd?, taskIds: [positive ints], at?: ISO time}` (`at` defaults to now). One row per `(sessionId, taskId)`; ids that are not tasks are skipped. A repeat report widens the first/last-seen window and replaces `cwd` only when it carries one. Returns `{linked: <rows written>}` |
-| `GET /now` | `{generatedAt, stories, finishedSessions}`. `stories`: open (not done/rejected) stories with a child in the queue, a run, the post-PR pipeline, review, `needs_input` or `rework`, or with journal or session activity on the story or a child in the last 14 days. Each has `project {id, slug, name}`, `progress {done, total}` (children, rejected ones left out), `running` (children in `executing`), `waiting` (`ask`: open questions on the story or a child; `review`: children in `review`/`awaiting_review`; `human`: human-executor children in `queued`/`defined`), `next` (first queued child in dispatch order: priority, then oldest), `sessions` (last 3 linked to the story or a child, newest first), `interactiveCostUsd` (interactive spend of those linked sessions, each usage row once) and `lastActivityAt`. Stories waiting on something come first, then by `lastActivityAt`. `finishedSessions`: up to 20 linked sessions seen in the last 90 days, newest first, whose every task belongs to a done/rejected story (a story counts as itself, a child as its parent story, a task with no story as itself), each with the `stories` it touched |
+| `GET /now` | `{generatedAt, stories, finishedSessions}`. `stories`: open (not done/rejected) stories with a child in the queue, a run, the post-PR pipeline, review, `needs_input` or `rework`, or with journal or session activity on the story or a child in the last 14 days. Each has `project {id, slug, name}`, `progress {done, total}` (children, rejected ones left out), `running` (children in `in_progress`), `waiting` (`ask`: open questions on the story or a child; `review`: children in `review`; `human`: human-executor children in `queued`/`defined`), `next` (first queued child in dispatch order: priority, then oldest), `sessions` (last 3 linked to the story or a child, newest first), `interactiveCostUsd` (interactive spend of those linked sessions, each usage row once) and `lastActivityAt`. Stories waiting on something come first, then by `lastActivityAt`. `finishedSessions`: up to 20 linked sessions seen in the last 90 days, newest first, whose every task belongs to a done/rejected story (a story counts as itself, a child as its parent story, a task with no story as itself), each with the `stories` it touched |
 | `GET /me/settings` / `PUT /me/settings` | The requesting operator's own settings, `{actor, usageTracking}`; `PUT` takes `{usageTracking: boolean}`. Only a person (a PWA request) has settings: anyone else reads `false` and gets 403 on `PUT`. See "Operator time tracking" |
 | `POST /activity` | The PWA activity tracker's flush, `{entries: [{kind: "active"\|"click", minute, route, name, value}]}` (at most 1000; `active` value is seconds, 1-60; entries more than 7 days old or 5 minutes ahead are dropped). Always `204`; nothing is stored unless the requesting operator opted in. `?client=pwa` stands in for the header, since `sendBeacon` cannot set one |
 | `GET /usage/my-time?days=30&weeks=8` | The "My time" tab: the requesting operator's active minutes per day, top modules by active time and top features by clicks, plus everyone's waiting-on-a-human figures per week (`waiting[]`: `asks`, `review`, `defined`, `humanQueued`, each `{count, medianHours, meanHours, totalHours}`) |
@@ -276,27 +276,61 @@ off with `PUT /settings/planner {"useEffortScaling": false}`, no deploy
 needed.
 
 A past task: the **post-PR pipeline**. Everything
-between an agent opening a PR and a human looking at the result - poll CI,
-merge, deploy, healthcheck - is plain code with no judgement in it, but until
-now it ran inside the agent's own session, holding a concurrency slot, a
-lease and a Claude session open for the ten-plus minutes of CI polling plus
-the deploy. Pinboard now owns that as state: five new `tasks.status` values
-(`awaiting_ci`, `awaiting_merge`, `awaiting_review`, `deploying`,
-`verifying`), a single table of legal transitions between them
+between an agent opening a PR and the change being live - poll CI, merge,
+deploy, healthcheck - is plain code with no judgement in it, so it runs on
+foreman's cheap poller rather than inside the agent's session. Pinboard owns
+it as state: four `tasks.status` values (`awaiting_ci`, `awaiting_merge`,
+`deploying`, `verifying`), a single table of legal transitions between them
 (`app/src/pipeline.ts`), and the two endpoints above for a poller to read and
 drive them.
 
 They are ordinary `tasks.status` values rather than a separate column on
-purpose: the governor counts concurrency with `where status = 'executing'`,
+purpose: the governor counts concurrency with `where status = 'in_progress'`,
 so a task entering the pipeline frees its agent slot with nothing new to
 teach it. A *failed* stage is deliberately not a status - it puts the task
 back to `queued` with `repair_reason`/`repair_context` set, so the existing
 dispatch, gating and attempt-cap path picks it up unchanged and a repair loop
-ends the same way any other retry does. `awaiting_review` is the one stage a
-human releases: a diff touching a drizzle migration holds *before* merge, so
-main never carries an unreviewed migration, and the review queue grew a
-second kind of card for it (Approve & merge, with the PR linked) alongside
-the existing after-the-fact sign-off.
+ends the same way any other retry does.
+
+#### Task statuses
+
+Thirteen, one meaning each (`TASK_STATUSES` in `app/src/task-model.ts`):
+
+| Status | Meaning |
+| --- | --- |
+| `idea`, `defined` | Written down; `defined` is ready to be refined and queued |
+| `queued` | Waiting for a run |
+| `in_progress` | Being worked on, by a person (a claim) or an agent run (a leased claim). The agent concurrency limit counts only tasks an agent run holds |
+| `needs_input` | An agent parked on a question nobody answered yet |
+| `awaiting_ci`, `awaiting_merge`, `deploying`, `verifying` | The post-PR pipeline, driven by foreman |
+| `review` | A human approves the result **before** it lands. With an open PR, Approve merges it (`review -> awaiting_merge`); with no PR (research, a draft), Approve accepts it (`/complete`, `-> done`) |
+| `rework` | Sent back, for a human or a requeue |
+| `done`, `rejected` | Closed |
+
+`decomposed` is still accepted as a story's label until stories get their
+own model. A handoff is an event, not a status: `POST /tasks/:id/handoff`
+records it and leaves the status alone, and the caller moves the task on.
+The pipeline's moves: `in_progress -> awaiting_ci` (the session ended at a
+PR), `awaiting_ci -> awaiting_merge` (green, auto-deploy allowed) or
+`-> review` (green but held for a human), `review -> awaiting_merge`,
+`awaiting_merge -> deploying`, or `-> done` when the repo has nothing to
+deploy, `deploying -> verifying -> done` for every executor mode. There is no
+sign-off after a deploy; testing by hand is its own human task in the story.
+
+A task held in `review` carries a `reviewReason`, shown on its review card:
+`migration` (the diff touches a drizzle migration, so main never carries an
+unreviewed one; the card warns to open the PR first), `no_auto_deploy` (the
+project has no auto-deploy opt-in) or `production`. It is set by the
+pipeline's move into `review` and cleared by any other status change.
+
+Old status names are still accepted on the way in (task create and update,
+the `status` filter, the pipeline endpoint), so a script or foreman from
+before this change keeps working and the two can deploy in either order:
+`planned`, `todo` and `backlog` mean `defined`, `executing` means
+`in_progress`, and `awaiting_review` means `review` with reason `migration`.
+A pipeline move to `review` from `awaiting_merge` or `verifying` (the old
+post-deploy sign-off) lands in `done`. Migration 0049 moved the stored rows
+the same way, and a task left in `handoff` to `rework` with a comment.
 
 A past task adds three guards:
 
@@ -318,7 +352,7 @@ A past task adds three guards:
   posted on the task before the approve runs. All ticked, or no checklist,
   approves as before.
 - **`needs_input` status.** An agent parked on an unanswered question:
-  `queued`/`executing`/`handoff -> needs_input` via `POST /tasks/:id/pipeline`, and
+  `queued`/`in_progress -> needs_input` via `POST /tasks/:id/pipeline`, and
   back out to `queued` (operator answered, no `repairReason`, not an
   attempt), `rework` or `rejected`. Pushes "Agent needs input: #id",
   linking to `/chat/<threadId>` when the event payload carries one.
@@ -330,16 +364,15 @@ A past task adds three guards:
   mentions as a path or `repo#N` is in `relatedProjectIds`, and no line
   starts with `TBD`, `?`, `Open question` or `Decide`. `force: true`
   bypasses it; the task form shows the failures and a "Queue anyway" button.
-  A move from `executing` or `needs_input` is not linted: that is foreman
+  A move from `in_progress` or `needs_input` is not linted: that is foreman
   handing back a task that already ran, and refusing it strands the task.
 
-`verifying` may also move straight to `done`, for foreman to
-auto-close an `executorMode=agent` task once its healthcheck passes. That
-move has `/complete`'s side effects (root grant revoked, a `complete` event
-for the releases history and notifications, parent story closed if this was
-its last open child). The same story relaxed the `depends_on` gate: a target
-in `review` with at least one PR and every PR `merged` satisfies it (its
-change is already on main, only a human sign-off is left), both in
+A pipeline move to `done` (after `verifying`, or a merge with nothing to
+deploy) has `/complete`'s side effects (root grant revoked, a `complete`
+event for the releases history and notifications, parent story closed if
+this was its last open child). The `depends_on` gate: a target in `review`
+with at least one PR and every PR `merged` satisfies it (its change is
+already on main, only the human's approval is left), both in
 `app/src/dependencies.ts`'s `blockedTaskIds()` and in the PWA's "blocked
 by" hints (via the relations endpoint's `otherTask.dependencySatisfied`).
 
@@ -358,14 +391,14 @@ is for projects where review means playing a build, so a task waiting in
   targets still block, as in a standard project. The rule is
   `dependencyGate()` in `app/src/task-model.ts`; the planner, `stackOn` and
   the approve guard all go through `app/src/dependencies.ts`.
-- **Approve order.** Moving a task from `review` or `awaiting_review` to
+- **Approve order.** Moving a task from `review` to
   `awaiting_merge` returns 409 `merge #<id> first` while one of its
   dependencies is unmerged, since a stacked PR contains its parent's branch.
   The review queue shows that message.
 - **Rejecting a parent.** When a task moves to `rejected`, each dependent
-  with an open PR, or still executing, gets the comment "Parent #<id> was
-  rejected. Rebuild this on main without it.", and those in `review` or
-  `awaiting_review` move to `rework`. A dependent that hasn't started now runs
+  with an open PR, or still in progress, gets the comment "Parent #<id> was
+  rejected. Rebuild this on main without it.", and those in `review` move to
+  `rework`. A dependent that hasn't started now runs
   off main. Sending a parent back to `rework` from the review queue doesn't
   touch its dependents; foreman restacks them once the parent's branch moves.
 

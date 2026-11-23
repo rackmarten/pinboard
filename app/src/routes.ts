@@ -26,7 +26,7 @@ import {
 } from "./db/schema.js";
 import { mergeChecklist, parseChecklist, parseChecklistPatch } from "./checklist.js";
 import { getCostRollup, getUsageSummary, InteractiveDedupe, licenseIdForLinuxUser, runDailyDigest } from "./usage.js";
-import { normalizeTaskEnums, parentMap, storyShouldComplete, isTerminalStatus, dependencySatisfied, isReviewMode, REVIEW_MODES, isReasoningEffort, REASONING_EFFORTS, effectiveReasoningEffort } from "./task-model.js";
+import { canonicalStatus, normalizeTaskEnums, parentMap, storyShouldComplete, isTerminalStatus, dependencySatisfied, isReviewMode, REVIEW_MODES, isReasoningEffort, REASONING_EFFORTS, effectiveReasoningEffort } from "./task-model.js";
 import { mergeBlockers, reworkStackedDependents, stackOnFor } from "./dependencies.js";
 import { readinessApplies, readinessFailures, toWorkspaceRepos, type ReadinessTask, type WorkspaceRepo } from "./readiness.js";
 import { listJournal, parseJournalQuery, parseTaskEventsQuery, recordEvent as recordJournalEvent, unreadNotificationCount } from "./journal.js";
@@ -77,7 +77,10 @@ import {
   openPrBlocksDone,
   getPipelineNext,
   isRepairReason,
+  isReviewReason,
   keepRepairOnPatch,
+  resolvePipelineTarget,
+  REVIEW_REASONS,
   type RepairReason,
 } from "./pipeline.js";
 import {
@@ -689,9 +692,11 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     }
     // status doubles as a comma-separated set, same convention as
     // projectId above, so the task list's multi-select status filter can be
-    // sent as one query param.
+    // sent as one query param. An old status name (STATUS_ALIASES) filters
+    // on the one it became, so a caller asking for `executing` still finds
+    // the running tasks.
     if (q.status) {
-      const statuses = q.status.split(",").filter(Boolean);
+      const statuses = [...new Set(q.status.split(",").filter(Boolean).map(canonicalStatus))];
       if (statuses.length === 1) conditions.push(eq(tasks.status, statuses[0]));
       else if (statuses.length > 1) conditions.push(inArray(tasks.status, statuses));
     }
@@ -858,6 +863,13 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       body.repairReason = null;
       body.repairContext = null;
     }
+    // a review reason describes one stay in `review`, so any status change
+    // drops it unless the caller names a new one.
+    if ("reviewReason" in body && body.reviewReason !== null && !isReviewReason(body.reviewReason)) {
+      throw badRequest(`reviewReason must be one of ${REVIEW_REASONS.join(", ")}`);
+    }
+    if (typeof body.status === "string" && before && body.status !== before.status && !("reviewReason" in body)) body.reviewReason = null;
+    if (body.reviewReason && (body.status ?? before?.status) !== "review") body.reviewReason = null;
     if (Array.isArray(body.relatedProjectIds)) await assertProjectIdsExist(body.relatedProjectIds as number[]);
     // the session id and the license whose `~/.claude` holds it
     // are one fact in two columns, so dropping the session drops its owner
@@ -1135,7 +1147,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     if (actorType === "agent" && (await hasRootLabel(id)) && !grantState(existing, new Date()).active) {
       return reply.code(409).send({ error: `task is labelled '${ROOT_LABEL}' and has no live root grant` });
     }
-    const leaseLive = existing.status === "executing" && existing.leaseExpiresAt && existing.leaseExpiresAt > new Date();
+    const leaseLive = existing.status === "in_progress" && existing.leaseExpiresAt && existing.leaseExpiresAt > new Date();
     if (leaseLive) {
       return reply.code(409).send({ error: "task is leased to a live agent run", leaseExpiresAt: existing.leaseExpiresAt });
     }
@@ -1150,7 +1162,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
     const [task] = await db
       .update(tasks)
-      .set({ status: "executing", leaseExpiresAt, updatedAt: new Date() })
+      .set({ status: "in_progress", leaseExpiresAt, reviewReason: null, updatedAt: new Date() })
       .where(eq(tasks.id, id))
       .returning();
     await recordEvent(id, "claim", actorType, actorName, leaseSeconds ? { leaseSeconds } : undefined);
@@ -1163,7 +1175,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     if ((req.body as Record<string, unknown>).force !== true && (await hasOpenPr(id))) return reply.code(409).send({ error: OPEN_PR_ERROR });
     const [task] = await db
       .update(tasks)
-      .set({ status: "done", rootGrantExpiresAt: revokeGrantSql, updatedAt: new Date() })
+      .set({ status: "done", rootGrantExpiresAt: revokeGrantSql, reviewReason: null, updatedAt: new Date() })
       .where(eq(tasks.id, id))
       .returning();
     if (!task) return reply.code(404).send({ error: "not found" });
@@ -1180,7 +1192,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const { actorType, actorName } = requireActor(req.body as Record<string, unknown>);
     const [task] = await db
       .update(tasks)
-      .set({ status: "rework", updatedAt: new Date() })
+      .set({ status: "rework", reviewReason: null, updatedAt: new Date() })
       .where(eq(tasks.id, id))
       .returning();
     if (!task) return reply.code(404).send({ error: "not found" });
@@ -1210,17 +1222,25 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const id = Number((req.params as { id: string }).id);
     const body = req.body as Record<string, unknown>;
     const { actorType, actorName } = requireActor(body);
-    const requested = body.to as string | undefined;
-    if (!requested) throw badRequest("to is required");
+    const asked = body.to as string | undefined;
+    if (!asked) throw badRequest("to is required");
 
     const [existing] = await db.select().from(tasks).where(eq(tasks.id, id));
     if (!existing) return reply.code(404).send({ error: "not found" });
 
-    const check = checkTransition(existing.status, requested, body.repairReason, existing.executorMode);
+    // an older foreman's names for a move (awaiting_review, the post-deploy
+    // review) are translated to today's before the check - see
+    // resolvePipelineTarget.
+    if (body.reviewReason !== undefined && body.reviewReason !== null && !isReviewReason(body.reviewReason)) {
+      throw badRequest(`reviewReason must be one of ${REVIEW_REASONS.join(", ")}`);
+    }
+    const target = resolvePipelineTarget(existing.status, asked, body.reviewReason);
+    const requested = target.to;
+    const check = checkTransition(existing.status, requested, body.repairReason, existing.executorMode, target.reviewReason);
     if (!check.ok) return reply.code(409).send({ error: check.reason });
     // a human approving a stacked playtest PR: its parent's branch is in it,
     // so the parent merges first (the PR then retargets to main).
-    if (requested === "awaiting_merge" && (existing.status === "review" || existing.status === "awaiting_review")) {
+    if (requested === "awaiting_merge" && existing.status === "review") {
       const blockers = await mergeBlockers(id);
       if (blockers.length) return reply.code(409).send({ error: `merge ${blockers.map((b) => `#${b}`).join(", ")} first`, blockers });
     }
@@ -1235,7 +1255,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
     const repairReason = isRepairReason(body.repairReason) ? (body.repairReason as RepairReason) : undefined;
     const repairContext = typeof body.repairContext === "string" ? body.repairContext : undefined;
-    await applyTransition(id, to, repairReason, repairContext);
+    await applyTransition(id, to, repairReason, repairContext, target.reviewReason);
 
     // One event per transition, so a task's own history reads as the walk it
     // actually took ("awaiting_ci -> queued, ci_failed") rather than as a
@@ -1245,8 +1265,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     await recordEvent(id, "pipeline", actorType, actorName, {
       from: existing.status,
       to,
-      ...(to !== requested ? { requested, reason: "root grant ended" } : {}),
+      ...(to !== requested ? { requested, reason: "root grant ended" } : requested !== asked ? { requested: asked } : {}),
       ...(repairReason ? { repairReason } : {}),
+      ...(to === "review" && target.reviewReason ? { reviewReason: target.reviewReason } : {}),
     });
     // foreman closing a verified agent task is a completion like
     // /complete's, so it gets the same event for the releases history and
@@ -1329,12 +1350,13 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     // more than one handoff across retries/rework, so this adds rather than
     // overwrites. These columns existed since I1a but nothing wrote to them
     // until now - the PWA's Task type has carried them unused since I1b.
+    // The status is left alone: a handoff is an event, and whoever posts it
+    // (foreman's runner, a person) moves the task on with its own call.
     const addedCostUsd = Number(body.costUsd ?? 0);
     const addedDurationMs = Number(body.durationMs ?? 0);
     await db
       .update(tasks)
       .set({
-        status: "handoff",
         actualCostUsd: (Number(task.actualCostUsd ?? 0) + addedCostUsd).toFixed(4),
         actualDurationMs: (task.actualDurationMs ?? 0) + addedDurationMs,
         updatedAt: new Date(),

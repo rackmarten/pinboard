@@ -58,12 +58,12 @@ const task = (fields: Partial<NowTask>): NowTask => ({
 const project = { id: 1, slug: "p", name: "P" };
 
 test("buildNowStories keeps stories with an active child or recent activity, waiting ones first", () => {
-  const quiet = task({ title: "quiet", status: "planned" });
+  const quiet = task({ title: "quiet", status: "defined" });
   const busy = task({ title: "busy", status: "decomposed" });
-  const recent = task({ title: "recent", status: "planned" });
+  const recent = task({ title: "recent", status: "defined" });
   const closed = task({ title: "closed", status: "done" });
   const busyChildren = [
-    task({ title: "running", status: "executing" }),
+    task({ title: "running", status: "in_progress" }),
     task({ title: "in review", status: "review" }),
     task({ title: "later", status: "queued", priority: 0, createdAt: daysAgo(1) }),
     task({ title: "first", status: "queued", priority: 0, createdAt: daysAgo(5) }),
@@ -96,7 +96,7 @@ test("buildNowStories keeps stories with an active child or recent activity, wai
   );
   const [b, r] = stories;
   assert.deepEqual(b.progress, { done: 1, total: 6 });
-  assert.deepEqual(b.running, [{ id: busyChildren[0].id, title: "running", status: "executing" }]);
+  assert.deepEqual(b.running, [{ id: busyChildren[0].id, title: "running", status: "in_progress" }]);
   assert.deepEqual(b.next, { id: busyChildren[3].id, title: "first" });
   assert.deepEqual(
     b.waiting.map((w) => [w.kind, w.taskId]),
@@ -114,7 +114,7 @@ test("buildNowStories keeps stories with an active child or recent activity, wai
 });
 
 test("buildNowStories sums each linked session's interactive spend once and lists the last three sessions", () => {
-  const story = task({ status: "planned" });
+  const story = task({ status: "defined" });
   const child = task({ status: "queued" });
   const links = [
     { sessionId: "a", taskId: story.id, cwd: "/a", lastSeenAt: daysAgo(4) },
@@ -150,7 +150,7 @@ test("buildNowStories sums each linked session's interactive spend once and list
 
 test("buildFinishedSessions keeps sessions whose every linked task belongs to a closed story", () => {
   const t = (id: number, status: string, taskType = "implementation") => [id, { id, title: `#${id}`, status, taskType }] as const;
-  const linked = new Map([t(1, "done", "story"), t(2, "done"), t(3, "planned", "story"), t(4, "done"), t(5, "rejected"), t(6, "queued")]);
+  const linked = new Map([t(1, "done", "story"), t(2, "done"), t(3, "defined", "story"), t(4, "done"), t(5, "rejected"), t(6, "queued")]);
   const parentOf = new Map([
     [2, 1],
     [4, 3],

@@ -150,7 +150,7 @@ await pr(cart, shop, 43);
 await patch(`/tasks/${cart.id}`, { status: "review", reason: "ready for review" });
 
 await patch(`/tasks/${wallets.id}`, { status: "queued", reason: "ready" });
-await patch(`/tasks/${receipts.id}`, { status: "planned", reason: "later" });
+await patch(`/tasks/${receipts.id}`, { status: "defined", reason: "later" });
 await patch(`/tasks/${delivery.id}`, { status: "queued", reason: "ready" });
 await post(`/tasks/${delivery.id}/claim`, { actorType: "agent", actorName: "atlas", leaseSeconds: 6 * 3600 }, "agent:atlas");
 await post(`/tasks/${delivery.id}/events`, { actorType: "agent", actorName: "atlas", payload: { kind: "text", text: "Reading the carrier table and the product page template." } }, "agent:atlas");
@@ -168,7 +168,7 @@ await handoff(search, "atlas", {
   checklist: ["Search for 'creme': the brûlée shows up"],
 });
 await pr(search, shop, 44);
-await patch(`/tasks/${search.id}`, { status: "awaiting_review", reason: "held before merge" });
+await patch(`/tasks/${search.id}`, { status: "review", reviewReason: "migration", reason: "held before merge" });
 await task(shop, "Gift cards", { executorMode: "human", taskType: "idea", priority: 1, estimatedEffort: 5, status: "idea" });
 
 // Mobile app.
@@ -250,7 +250,7 @@ await task(docs, "Getting-started guide for the app", {
   status: "queued", estimatedEffort: 5,
   description: describe("Write a getting-started guide for the mobile app: install, first trail, offline use.", "a new user can follow the guide from install to a saved trail."),
 });
-await task(ops, "Rotate the deploy key", { executorMode: "human", taskType: "maintenance", priority: 3, status: "planned" });
+await task(ops, "Rotate the deploy key", { executorMode: "human", taskType: "maintenance", priority: 3, status: "defined" });
 await task(ops, "Retire the old image cache", { executorMode: "human", taskType: "maintenance", priority: 1, status: "rejected" });
 
 // --- budget and governor ----------------------------------------------------------

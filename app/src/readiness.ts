@@ -37,12 +37,12 @@ export function mentionsRepo(text: string, repo: string, org?: string): boolean 
   return !!org && new RegExp(`(^|[\\s/\`'"(])${escape(org)}/${r}(?![\\w-]|\\.\\w)`, "m").test(text);
 }
 
-// A move into `queued` is linted only when a person is queueing planned work.
-// From `executing` it is foreman handing a claimed task back (a session-limit
+// A move into `queued` is linted only when a person is queueing written-down
+// work. From `in_progress` it is foreman handing a claimed task back (a session-limit
 // refund, a refused claim), and from `needs_input` it is an answered question
 // on a task that already ran: refusing those strands the task mid-flight
 // rather than stopping an unready one from starting.
-const UNLINTED_FROM = new Set(["executing", "needs_input"]);
+const UNLINTED_FROM = new Set(["in_progress", "needs_input"]);
 
 export function readinessApplies(fromStatus: string | null | undefined): boolean {
   return !UNLINTED_FROM.has(fromStatus ?? "");

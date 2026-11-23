@@ -16,26 +16,27 @@ import {
 const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
 
 // Task type (idea/research/decision/architecture/implementation/bug/testing/
-// review/deployment/maintenance) and status (idea -> defined -> planned ->
-// decomposed -> queued -> executing -> handoff -> awaiting_ci ->
-// awaiting_merge -> deploying -> verifying -> review -> rework/done, plus
-// "rejected" - a terminal status set by hand for an accidental duplicate or
-// otherwise unwanted task, so it can be hidden from default views without
-// deleting the row or renumbering later IDs) are plain text rather than a
-// Postgres enum - see idea-task-management.md's "Task Types"/"Task Lifecycle"
-// sections for the values in use today. Kept as text so a new value doesn't
-// need a migration, since this list is still expected to grow as real tasks
-// get filed - a past task's five pipeline statuses needed no migration of
-// their own for exactly that reason.
+// review/deployment/maintenance) and status are plain text rather than a
+// Postgres enum, so a new value doesn't need a migration of its own;
+// task-model.ts's TASK_STATUSES is the list the API accepts. The statuses:
+// idea, defined (written down, not yet ready), queued, in_progress (being
+// worked on, by a person or an agent run), needs_input (an agent parked on a
+// question), the post-PR pipeline (awaiting_ci, awaiting_merge, deploying,
+// verifying), review (a human approves the result before it lands), rework,
+// done and rejected (a terminal status set by hand for an accidental
+// duplicate or otherwise unwanted task, so it can be hidden from default
+// views without deleting the row). `decomposed` is still a story's label
+// until stories get their own model. Migration 0049 folded the removed ones
+// in (planned -> defined, executing -> in_progress, awaiting_review ->
+// review, handoff -> rework); task-model.ts's STATUS_ALIASES still accepts
+// their old names on the way in.
 //
-// A past task: the five statuses between "handoff" and
-// "review" (awaiting_ci, awaiting_merge, awaiting_review, deploying,
-// verifying) are the post-PR pipeline, driven by a cheap foreman poller
-// rather than by the agent session that opened the PR. They live here, in
-// tasks.status, rather than in a separate pipelineState column precisely so
-// governor.ts's concurrency check (`where t.status = 'executing'`) frees the
-// agent slot the moment a task enters the pipeline, with nothing new to
-// teach it. See pipeline.ts for the legal transitions between them.
+// The pipeline statuses are driven by a cheap foreman poller rather than by
+// the agent session that opened the PR. They live here, in tasks.status,
+// rather than in a separate pipelineState column precisely so governor.ts's
+// concurrency check (`where t.status = 'in_progress'`) frees the agent slot
+// the moment a task enters the pipeline, with nothing new to teach it. See
+// pipeline.ts for the legal transitions between them.
 
 export const projects = pgTable("projects", {
   id: serial("id").primaryKey(),
@@ -130,7 +131,7 @@ export const tasks = pgTable("tasks", {
   // Set by foreman's agent runner (I4a) while a `claude -p` session is
   // executing this task, renewed periodically until it exits. Past this
   // timestamp the claim is considered abandoned (a crashed runner) and the
-  // task becomes reclaimable even though status is still "executing".
+  // task becomes reclaimable even though status is still "in_progress".
   leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
   // Incremented by the runner before each spawn, independent of whether a
   // handoff row ever gets written - a crashed/killed attempt still counts
@@ -190,6 +191,11 @@ export const tasks = pgTable("tasks", {
   // pipeline.ts.
   repairReason: text("repair_reason"),
   repairContext: text("repair_context"),
+  // why a task waits in `review` for a human before its PR merges -
+  // migration | no_auto_deploy | production (pipeline.ts's REVIEW_REASONS),
+  // shown on the review card. Set by the pipeline's move into `review`,
+  // cleared by every other status change; null on a review with no PR.
+  reviewReason: text("review_reason"),
   // A past task: root access. `rootScope` is the containers (CTIDs) a
   // `root-access`-labelled task wants root on, editable like any other field.
   // The grant columns are the operator's approval: written only by

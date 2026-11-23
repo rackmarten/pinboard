@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { db } from "./db/client.js";
 import { activityEvents, activityMinutes, operatorSettings, taskAsks, taskEvents, tasks } from "./db/schema.js";
 import { actorFromHeaders, actorKey, identitySettings, type Actor } from "./identity.js";
+import { canonicalStatus } from "./task-model.js";
 
 // How each operator spends time in pinboard. The PWA's tracker
 // (pwa/src/activity-tracker.ts) counts active seconds per route and module
@@ -158,12 +159,13 @@ export interface Interval {
 
 // The status a journal event leaves its task in, or null for an event that
 // does not move it. Most moves carry `to`; claim/complete/reject predate that
-// and imply theirs.
+// and imply theirs. An old status name in history reads as the one it became
+// (awaiting_review counts as review).
 export function statusAfter(e: JournalStatusEvent): string | null {
   const to = e.payload?.to;
-  if ((e.eventType === "status" || e.eventType === "pipeline") && typeof to === "string") return to;
-  if (e.eventType === "created" && typeof e.payload?.status === "string") return e.payload.status;
-  if (e.eventType === "claim") return "executing";
+  if ((e.eventType === "status" || e.eventType === "pipeline") && typeof to === "string") return canonicalStatus(to);
+  if (e.eventType === "created" && typeof e.payload?.status === "string") return canonicalStatus(e.payload.status);
+  if (e.eventType === "claim") return "in_progress";
   if (e.eventType === "complete") return "done";
   if (e.eventType === "reject") return "rework";
   return null;

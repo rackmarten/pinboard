@@ -29,22 +29,23 @@ import { REVIEW_STATUSES, handoffTldr } from "../inbox.js";
 // (/review redirects to /inbox). Each card shows the latest handoff's TL;DR,
 // not the whole handoff - the full one is on the task's own page.
 
-// this screen now holds two different decisions, not one. A
-// `review` task is finished and already deployed - approving it signs the
-// work off (-> done). An `awaiting_review` task is the opposite end: its PR
-// is still open and nothing has merged, because the pipeline holds anything
-// judged too costly to unwind automatically (today, a diff touching a drizzle
-// migration) for a human to look at BEFORE it reaches main. Approving that
-// one releases the hold and lets the pipeline merge and deploy it.
-//
-// They share a queue deliberately - both are "something is waiting on you" -
-// but the cards say which is which, because approving the second without
-// opening its PR is exactly the mistake the hold exists to prevent.
+// `review` always means a human approves the result before it lands. With
+// an open PR, approving merges it (-> awaiting_merge, then the pipeline
+// deploys it); with no PR (research, a draft, an ops task) it accepts the
+// result (-> done). The task's reviewReason says why a PR waits here, and the
+// card shows it. A migration hold gets a warning on top: its PR is held
+// because a bad migration is costly to unwind, and approving it without
+// opening the diff is exactly the mistake the hold exists to prevent.
 const QUEUE_STATUSES = REVIEW_STATUSES;
 
 function isPreMergeHold(task: TaskSummary): boolean {
-  return task.status === "awaiting_review";
+  return task.reviewReason === "migration";
 }
+
+const REVIEW_REASON_TEXT: Record<string, string> = {
+  no_auto_deploy: "CI is green. This project has no auto-deploy, so approving merges the PR and deploys it.",
+  production: "CI is green. Production is never merged automatically; approving merges the PR and deploys it.",
+};
 
 const tasks = ref<TaskSummary[]>([]);
 const projects = ref<Project[]>([]);
@@ -264,9 +265,13 @@ async function confirmReject(requeue: boolean): Promise<void> {
           <div class="text-caption text-medium-emphasis mb-1">Checklist · {{ checkedCountLabel(checklists[task.id]!) }}</div>
           <ChecklistPanel :items="checklists[task.id]!" :task-id="task.id" @update:items="checklists[task.id] = $event" />
         </v-card-text>
+        <v-card-text v-if="task.reviewReason && REVIEW_REASON_TEXT[task.reviewReason]" class="pt-0 text-body-2 text-medium-emphasis">
+          {{ REVIEW_REASON_TEXT[task.reviewReason] }}
+        </v-card-text>
         <v-card-text v-if="isPreMergeHold(task)" class="pt-0">
           <v-alert type="warning" density="compact" variant="tonal" icon="mdi-gate-alert">
-            Held before merge - nothing has reached main yet. Read the diff before approving.
+            Held before merge because the diff touches a database migration - nothing has reached main yet. Open the PR
+            and read the diff before approving.
             <template v-if="prs[task.id]">
               <br />
               <a :href="prs[task.id]!.url" target="_blank" rel="noopener">{{ prs[task.id]!.url }}</a>
@@ -278,7 +283,7 @@ async function confirmReject(requeue: boolean): Promise<void> {
           <v-btn variant="text" color="error" :loading="acting === task.id" data-track="reject" @click="openReject(task)">Reject</v-btn>
           <v-btn v-if="!isPreMergeHold(task)" variant="text" :loading="acting === task.id" data-track="done-without-merging" @click="doneWithoutMerging(task)">Mark done without merging</v-btn>
           <v-btn variant="tonal" color="success" :loading="acting === task.id" data-track="approve" @click="approve(task)">
-            {{ isPreMergeHold(task) ? "Approve & merge" : "Approve" }}
+            {{ task.reviewReason ? "Approve & merge" : "Approve" }}
           </v-btn>
         </v-card-actions>
       </v-card>
