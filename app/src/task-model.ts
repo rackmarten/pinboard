@@ -4,9 +4,6 @@
 export const TASK_STATUSES = [
   "idea",
   "defined",
-  // a story's label until stories get a status of their own design; nothing
-  // else uses it.
-  "decomposed",
   "queued",
   // being worked on, by a person (a claim) or an agent run (a leased claim).
   "in_progress",
@@ -34,8 +31,10 @@ export const TASK_TYPES = [
   "deployment",
   "maintenance",
   // a parent task grouping ordered increments. Never runnable
-  // itself (plan.ts's rankRunnableTasks skips it); it moves to done on its
-  // own once every child is done or rejected (storyShouldComplete below).
+  // itself (plan.ts's rankRunnableTasks skips it by type); it moves to done
+  // on its own once every child is done or rejected (storyShouldComplete
+  // below). It has no workflow status of its own: stored as defined while
+  // open, and what the UI shows is storyRollup's phase.
   "story",
 ] as const;
 
@@ -55,19 +54,22 @@ function oneOf(field: string, allowed: readonly string[], value: unknown): EnumC
 // `backlog` and `todo` were never real statuses but scripts and older skill
 // text send them for "written down, not yet ready"; `planned`, `executing`
 // and `awaiting_review` were removed by migration 0049, and a foreman or
-// script that predates it keeps working through these.
+// script that predates it keeps working through these. `decomposed` was a
+// story's label until migration 0050 made every story plain defined.
 export const STATUS_ALIASES: Readonly<Record<string, string>> = {
   backlog: "defined",
   todo: "defined",
   planned: "defined",
   executing: "in_progress",
   awaiting_review: "review",
+  decomposed: "defined",
 };
 
-// What migration 0049 did to stored rows: every alias above, plus `handoff`
-// (an event now, not a status) to rework, with a comment. The test checks the
-// SQL against this.
-export const STATUS_MIGRATION: Readonly<Record<string, string>> = { ...STATUS_ALIASES, handoff: "rework" };
+// What migration 0049 did to stored rows: every alias above but decomposed
+// (0050's), plus `handoff` (an event now, not a status) to rework, with a
+// comment. The test checks the SQL against this.
+const { decomposed: _decomposed, ...aliasesBefore0050 } = STATUS_ALIASES;
+export const STATUS_MIGRATION: Readonly<Record<string, string>> = { ...aliasesBefore0050, handoff: "rework" };
 
 export function canonicalStatus(status: string): string {
   return STATUS_ALIASES[status] ?? status;
@@ -116,6 +118,58 @@ export function storyShouldComplete(storyStatus: string, childStatuses: readonly
 
 export function isTerminalStatus(status: string): boolean {
   return TERMINAL.has(status);
+}
+
+// The phases the UI groups statuses into (the kanban columns to come).
+// rejected sits in Done, hidden by default.
+export const TASK_PHASES = ["backlog", "ready", "in_progress", "pipeline", "needs_you", "done"] as const;
+export type TaskPhase = (typeof TASK_PHASES)[number];
+
+export const STATUS_PHASES: Readonly<Record<(typeof TASK_STATUSES)[number], TaskPhase>> = {
+  idea: "backlog",
+  defined: "backlog",
+  queued: "ready",
+  in_progress: "in_progress",
+  awaiting_ci: "pipeline",
+  awaiting_merge: "pipeline",
+  deploying: "pipeline",
+  verifying: "pipeline",
+  needs_input: "needs_you",
+  review: "needs_you",
+  rework: "needs_you",
+  done: "done",
+  rejected: "done",
+};
+
+export function statusPhase(status: string): TaskPhase {
+  return STATUS_PHASES[canonicalStatus(status) as keyof typeof STATUS_PHASES] ?? "backlog";
+}
+
+// What a story shows instead of a status: its children counted per phase
+// (rejected ones left out, like the done/total progress; zero counts
+// omitted to keep the task list small) and one phase for the whole story.
+export interface StoryRollup {
+  phase: TaskPhase;
+  counts: Partial<Record<TaskPhase, number>>;
+}
+
+// The first phase any open child is in wins, in this order: a child waiting
+// on a human outranks one being worked on, which outranks one in the
+// pipeline, then one queued. A closed story, or one whose children are all
+// done or rejected, is done; one with no children is backlog.
+const STORY_PHASE_ORDER: readonly TaskPhase[] = ["needs_you", "in_progress", "pipeline", "ready", "backlog"];
+
+export function storyRollup(storyStatus: string, childStatuses: readonly string[]): StoryRollup {
+  const counts: Partial<Record<TaskPhase, number>> = {};
+  for (const status of childStatuses) {
+    if (status === "rejected") continue;
+    const phase = statusPhase(status);
+    counts[phase] = (counts[phase] ?? 0) + 1;
+  }
+  if (TERMINAL.has(storyStatus) || (childStatuses.length > 0 && childStatuses.every((s) => TERMINAL.has(s)))) {
+    return { phase: "done", counts };
+  }
+  return { phase: STORY_PHASE_ORDER.find((p) => counts[p]) ?? "backlog", counts };
 }
 
 // whether a depends_on target no longer holds its dependent back.

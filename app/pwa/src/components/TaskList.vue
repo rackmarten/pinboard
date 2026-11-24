@@ -6,7 +6,9 @@
 // without forking the row markup.
 import TaskPriorityChip from "./TaskPriorityChip.vue";
 import TaskStatusChip from "./TaskStatusChip.vue";
-import { statusColor, taskTypeIcon } from "../display.js";
+import StoryRollupChip from "./StoryRollupChip.vue";
+import type { StoryRollup } from "../api.js";
+import { phaseColor, statusColor, taskTypeIcon } from "../display.js";
 
 export interface TaskListItem {
   id: number;
@@ -15,6 +17,8 @@ export interface TaskListItem {
   taskType: string;
   executorMode: string;
   priority: number;
+  // set on a story from GET /tasks; shown instead of its status.
+  rollup?: StoryRollup;
 }
 
 defineProps<{ tasks: readonly TaskListItem[] }>();
@@ -25,7 +29,7 @@ defineSlots<{ actions?(props: { task: TaskListItem; index: number }): unknown }>
   <v-list lines="two">
     <v-list-item v-for="(task, index) in tasks" :key="task.id" :to="`/tasks/${task.id}`" rounded="lg" class="mb-1">
       <template #prepend>
-        <v-avatar :color="statusColor(task.status)" variant="tonal" size="36">
+        <v-avatar :color="task.rollup ? phaseColor(task.rollup.phase) : statusColor(task.status)" variant="tonal" size="36">
           <v-icon :icon="taskTypeIcon(task.taskType)" size="20" />
         </v-avatar>
       </template>
@@ -36,7 +40,8 @@ defineSlots<{ actions?(props: { task: TaskListItem; index: number }): unknown }>
       <template #append>
         <div class="d-flex ga-1 align-center flex-wrap justify-end" style="max-width: 220px">
           <TaskPriorityChip v-if="task.priority" :priority="task.priority" />
-          <TaskStatusChip :status="task.status" />
+          <StoryRollupChip v-if="task.rollup" :rollup="task.rollup" />
+          <TaskStatusChip v-else :status="task.status" />
           <slot name="actions" :task="task" :index="index" />
         </div>
       </template>

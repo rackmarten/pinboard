@@ -351,6 +351,13 @@
       "when": 1795471334325,
       "tag": "0049_task_status_model",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1795482933453,
+      "tag": "0050_stories_defined",
+      "breakpoints": true
     }
   ]
 }

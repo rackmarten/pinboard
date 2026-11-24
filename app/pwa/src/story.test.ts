@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupTasks, openBlockers, orderChildren, type GroupableTask } from "./story.js";
+import { groupTasks, openBlockers, orderChildren, rollupCountsText, type GroupableTask } from "./story.js";
 
 function t(id: number, extra: Partial<GroupableTask> = {}): GroupableTask {
   return { id, taskType: "implementation", status: "queued", priority: 0, parentTaskId: null, ...extra };
@@ -74,5 +74,16 @@ describe("openBlockers", () => {
   it("returns only known targets that are not satisfied", () => {
     const satisfied: Record<number, boolean> = { 1: true, 2: false, 3: true };
     expect(openBlockers([1, 2, 3, 4], (id) => satisfied[id])).toEqual([2]);
+  });
+});
+
+describe("rollupCountsText", () => {
+  it("lists a story's child counts in phase order, skipping empty phases", () => {
+    expect(rollupCountsText({ done: 2, needs_you: 1, backlog: 3 })).toBe("3 backlog · 1 needs you · 2 done");
+    expect(rollupCountsText({ in_progress: 1, ready: 0 })).toBe("1 in progress");
+  });
+
+  it("is empty for a story with no children", () => {
+    expect(rollupCountsText({})).toBe("");
   });
 });

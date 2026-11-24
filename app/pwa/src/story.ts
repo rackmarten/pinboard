@@ -2,6 +2,9 @@
 // under its stories and ordering a story's children, kept out of the views
 // so they can be unit-tested (story.test.ts).
 
+import { TASK_PHASES, type TaskPhase } from "./api.js";
+import { phaseLabel } from "./display.js";
+
 export interface GroupableTask {
   id: number;
   taskType: string;
@@ -19,6 +22,14 @@ export interface GroupedRow<T> {
   progress?: { done: number; total: number };
   // Set on story rows: number of children shown under it after filtering.
   childCount?: number;
+}
+
+// A story's child counts in phase order, e.g. "1 in progress · 2 done";
+// empty for a story with no (unrejected) children.
+export function rollupCountsText(counts: Partial<Record<TaskPhase, number>>): string {
+  return TASK_PHASES.filter((p) => counts[p])
+    .map((p) => `${counts[p]} ${phaseLabel(p).toLowerCase()}`)
+    .join(" · ");
 }
 
 // Children count as finished the same way the backend's story auto-close does (#405).
