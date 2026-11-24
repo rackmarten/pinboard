@@ -3,25 +3,20 @@ import { db } from "./db/client.js";
 import { projects, pullRequests, tasks } from "./db/schema.js";
 
 // A past task. The post-PR pipeline: the steps between
-// "the agent pushed a branch and opened a PR" and "a human looks at the
-// result". None of them need an agent, so none of them should hold one - the
+// "the agent pushed a branch and opened a PR" and "the change is live".
+// None of them need an agent, so none of them should hold one - the
 // session ends at the PR and a cheap foreman poller (#154's increment 2)
 // drives the rest from these statuses alone.
 //
 // They are ordinary tasks.status values rather than a separate column so the
-// governor's concurrency check (`status = 'executing'`) frees the agent slot
-// for free - see schema.ts's comment on tasks.status.
+// governor's concurrency check (`status = 'in_progress'`) frees the agent
+// slot for free - see schema.ts's comment on tasks.status.
 export const PIPELINE_STATUSES = [
   // The PR is open and its branch's CI run is being polled.
   "awaiting_ci",
-  // CI is green and the PR is ready to be squash-merged.
+  // CI is green (or a human approved it in review) and the PR is ready to be
+  // squash-merged.
   "awaiting_merge",
-  // Held for a human BEFORE merge, so main never carries an unreviewed
-  // change of this kind - today that means a diff touching a drizzle
-  // migration (#61's item 2), since a bad migration is far costlier to
-  // unwind than a bad UI change. Which diffs qualify is the poller's call,
-  // not this module's; from here it is just a stage a human releases.
-  "awaiting_review",
   // Merged; deploy-service.sh is running against the repo's own LXC.
   "deploying",
   // Deployed; the repo's healthcheck.sh is being retried until it passes.
@@ -44,28 +39,46 @@ export function isRepairReason(value: unknown): value is RepairReason {
   return (REPAIR_REASONS as readonly string[]).includes(value as string);
 }
 
+// Why a task with green CI waits in `review` for a human instead of merging.
+// `review` always means "a human approves this before it lands"; the reason
+// says what kind of approval it is, and the review card shows it:
+//   migration       the diff touches a drizzle migration (or could not be
+//                   read), held so main never carries an unreviewed one - a
+//                   bad migration is far costlier to unwind than a bad UI
+//                   change. Which diffs qualify is the poller's call.
+//   no_auto_deploy  the project has no auto-deploy opt-in, so a human merges
+//   production      production is never merged autonomously
+// Null on any other review (work with no PR, an ops task's handoff).
+export const REVIEW_REASONS = ["migration", "no_auto_deploy", "production"] as const;
+export type ReviewReason = (typeof REVIEW_REASONS)[number];
+
+export function isReviewReason(value: unknown): value is ReviewReason {
+  return (REVIEW_REASONS as readonly string[]).includes(value as string);
+}
+
 // Every legal move, in one place, so the poller cannot invent a state
 // machine of its own and drift from what the UI shows. Read as "a task
 // currently in X may be moved to any of Y":
 //
-//   executing/handoff -> awaiting_ci        the session ended at a PR
+//   in_progress       -> awaiting_ci        the session ended at a PR
 //   awaiting_ci       -> awaiting_merge     CI green, auto-deploy allowed
-//                     -> awaiting_review    CI green, but held for a human
-//                     -> review             CI green, nothing merges it (the
-//                                           project has no auto-deploy opt-in,
-//                                           so a human merges by hand)
-//   awaiting_review   -> awaiting_merge     a human approved the hold
+//                     -> review             CI green, but held for a human
+//                                           before merge (a reviewReason:
+//                                           a migration diff, no auto-deploy
+//                                           opt-in, production)
+//   review            -> awaiting_merge     a human approved it: approve and
+//                                           merge. A review task with no PR
+//                                           is accepted with /complete instead
 //   awaiting_merge    -> deploying          merged, the repo has an LXC
-//                     -> review             merged, but nothing to deploy
+//                     -> done               merged, but nothing to deploy
 //                                           (a library repo - see homelab/
 //                                           AGENTS.md's "Repos with no LXC")
 //   deploying         -> verifying          deploy script returned clean
-//   verifying         -> review             healthcheck passed; a human now
-//                                           signs the task off as usual
-//                     -> done               healthcheck passed on an
-//                                           executorMode=agent task, closed
-//                                           without a human; same
-//                                           side effects as /complete
+//   verifying         -> done               healthcheck passed, for every
+//                                           executorMode; same side effects
+//                                           as /complete. Testing by hand
+//                                           after a deploy is its own human
+//                                           task, not a status
 //
 // Plus, from every pipeline status: `queued` (hand back to an agent, with a
 // repairReason) and `rework`/`rejected` (a human giving up on it or pulling
@@ -75,31 +88,39 @@ export function isRepairReason(value: unknown): value is RepairReason {
 // database.
 const HANDBACK_TARGETS = ["queued", "rework", "rejected"] as const;
 
-// A past task adds two families:
-//   review            -> awaiting_merge     a human approved a task whose PR is
-//                                           still open, so approving merges it
-//                                           instead of closing it over an
-//                                           unmerged branch
-//   queued/executing/ -> needs_input        an agent asked a question nobody
-//   handoff                                 answered; parked, not an attempt
-//                                           (foreman posts the handoff first,
-//                                           so a no-commit session ending on
-//                                           a question moves from handoff)
-//   needs_input       -> queued             the operator answered (no
+// And the question family:
+//   queued/in_progress -> needs_input      an agent asked a question nobody
+//                                           answered; parked, not an attempt
+//   needs_input        -> queued           the operator answered (no
 //                                           repairReason - it is not a repair)
-//                     -> rework/rejected
+//                      -> rework/rejected
 const TRANSITIONS: Record<string, readonly string[]> = {
   queued: ["needs_input"],
-  executing: ["awaiting_ci", "needs_input"],
+  in_progress: ["awaiting_ci", "needs_input"],
   needs_input: [...HANDBACK_TARGETS],
   review: ["awaiting_merge"],
-  handoff: ["awaiting_ci", "needs_input"],
-  awaiting_ci: ["awaiting_merge", "awaiting_review", "review", ...HANDBACK_TARGETS],
-  awaiting_review: ["awaiting_merge", ...HANDBACK_TARGETS],
-  awaiting_merge: ["deploying", "review", ...HANDBACK_TARGETS],
+  awaiting_ci: ["awaiting_merge", "review", ...HANDBACK_TARGETS],
+  awaiting_merge: ["deploying", "done", ...HANDBACK_TARGETS],
   deploying: ["verifying", ...HANDBACK_TARGETS],
-  verifying: ["review", "done", ...HANDBACK_TARGETS],
+  verifying: ["done", ...HANDBACK_TARGETS],
 };
+
+// What a requested move means under today's status set. A foreman that
+// predates it still asks for the old moves, and pinboard and foreman deploy
+// separately, so those are translated rather than refused:
+//   -> awaiting_review                  is review held for a migration
+//   awaiting_merge/verifying -> review  is the post-deploy sign-off that no
+//                                       longer exists, so -> done
+// Anything else passes through unchanged for checkTransition to judge.
+export function resolvePipelineTarget(
+  from: string,
+  requested: string,
+  reviewReason?: unknown,
+): { to: string; reviewReason: ReviewReason | null } {
+  if (requested === "awaiting_review") return { to: "review", reviewReason: "migration" };
+  if (requested === "review" && (from === "awaiting_merge" || from === "verifying")) return { to: "done", reviewReason: null };
+  return { to: requested, reviewReason: requested === "review" && isReviewReason(reviewReason) ? reviewReason : null };
+}
 
 // closing a task while any of its PR rows is still open would
 // leave the work unmerged; `force` is the explicit "done without merging".
@@ -111,7 +132,13 @@ export type TransitionCheck = { ok: true } | { ok: false; reason: string };
 
 // Pure, so it is unit-testable without a database and so the route handler
 // has exactly one thing to do with an illegal move: refuse it.
-export function checkTransition(from: string, to: string, repairReason?: unknown, executorMode?: string): TransitionCheck {
+export function checkTransition(
+  from: string,
+  to: string,
+  repairReason?: unknown,
+  executorMode?: string,
+  reviewReason?: unknown,
+): TransitionCheck {
   const allowed = TRANSITIONS[from];
   if (!allowed) {
     return { ok: false, reason: `task is in '${from}', which is not a pipeline status - nothing to advance` };
@@ -144,6 +171,10 @@ export function checkTransition(from: string, to: string, repairReason?: unknown
   if (to !== "queued" && to !== "rework" && hasReason) {
     return { ok: false, reason: "repairReason only applies to a handback to 'queued' or a park in 'rework'" };
   }
+  if (reviewReason !== undefined && reviewReason !== null) {
+    if (to !== "review") return { ok: false, reason: "reviewReason only applies to a move to 'review'" };
+    if (!isReviewReason(reviewReason)) return { ok: false, reason: `reviewReason must be one of ${REVIEW_REASONS.join(", ")}` };
+  }
   return { ok: true };
 }
 
@@ -159,8 +190,8 @@ export function checkTransition(from: string, to: string, repairReason?: unknown
 //   a repair) and the runner parking a task in `rework` after its attempts ran
 //   out, which must not leave a stale reason for the next requeue to inherit.
 //
-// Moves to anything else keep them: the runner claims a handed-back task with
-// a PATCH to `executing` and reads the repair fields after that.
+// Moves to anything else keep them: the runner claims a handed-back task
+// (-> `in_progress`) and reads the repair fields after that.
 export function keepRepairOnPatch(fromStatus: string | undefined, toStatus: string): boolean {
   if (toStatus !== "queued" && toStatus !== "rework") return true;
   return fromStatus === "rework" && toStatus === "queued";
@@ -252,11 +283,13 @@ export async function applyTransition(
   to: string,
   repairReason?: RepairReason,
   repairContext?: string,
+  reviewReason?: ReviewReason | null,
 ): Promise<void> {
   await db
     .update(tasks)
     .set({
       status: to,
+      reviewReason: to === "review" ? (reviewReason ?? null) : null,
       pipelineStageEnteredAt: isPipelineStatus(to) ? new Date() : null,
       repairReason: to === "queued" || to === "rework" ? (repairReason ?? null) : null,
       repairContext: to === "queued" || to === "rework" ? (repairContext ?? null) : null,

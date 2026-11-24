@@ -18,19 +18,22 @@ test("a human's own action never notifies", () => {
 });
 
 test("status changes that need attention", () => {
-  assert.equal(deriveNotification(ev({ payload: { from: "executing", to: "rework" } }), task)?.kind, "failure");
+  assert.equal(deriveNotification(ev({ payload: { from: "in_progress", to: "rework" } }), task)?.kind, "failure");
   assert.equal(deriveNotification(ev({ payload: { to: "review" } }), task)?.kind, "review");
   assert.equal(deriveNotification(ev({ payload: { to: "done" } }), task)?.kind, "completed");
-  assert.equal(deriveNotification(ev({ payload: { to: "executing" } }), task), null);
+  assert.equal(deriveNotification(ev({ payload: { to: "in_progress" } }), task), null);
 });
 
 test("pipeline: a repair handback is a failure, a hold is an approval", () => {
   const failed = deriveNotification(ev({ eventType: "pipeline", payload: { from: "awaiting_ci", to: "queued", repairReason: "ci_failed" } }), task);
   assert.equal(failed?.kind, "failure");
   assert.match(failed!.title, /^CI failed: #12 Fix the thing$/);
-  const held = deriveNotification(ev({ eventType: "pipeline", payload: { to: "awaiting_review" } }), task);
+  const held = deriveNotification(ev({ eventType: "pipeline", payload: { to: "review", reviewReason: "migration" } }), task);
   assert.equal(held?.kind, "approval");
   assert.equal(held?.url, "/review");
+  assert.match(held!.body ?? "", /migration/);
+  assert.equal(deriveNotification(ev({ eventType: "pipeline", payload: { to: "review", reviewReason: "no_auto_deploy" } }), task)?.kind, "approval");
+  assert.equal(deriveNotification(ev({ eventType: "pipeline", payload: { to: "review" } }), task)?.kind, "review");
   assert.equal(deriveNotification(ev({ eventType: "pipeline", payload: { to: "deploying" } }), task), null);
 });
 

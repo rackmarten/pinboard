@@ -129,7 +129,7 @@ const rootGrantActive = computed(() => {
 // is closed can be granted, so the button is not offered there.
 const rootGrantable = computed(() => {
   const status = task.value?.status ?? "";
-  return !["executing", "handoff", "awaiting_ci", "awaiting_merge", "awaiting_review", "deploying", "verifying", "done", "rejected"].includes(status);
+  return !["in_progress", "awaiting_ci", "awaiting_merge", "deploying", "verifying", "done", "rejected"].includes(status);
 });
 
 function openRootGrant(): void {
@@ -642,7 +642,7 @@ function formatDate(iso: string): string {
             >
               Live activity ({{ activityEvents.length }})
               <v-chip
-                v-if="task.status === 'executing'"
+                v-if="task.status === 'in_progress'"
                 size="small"
                 color="primary"
                 variant="tonal"

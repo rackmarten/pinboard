@@ -1,36 +1,83 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { checkTransition, openPrBlocksDone, isPipelineStatus, isRepairReason, keepRepairOnPatch, PIPELINE_STATUSES } from "./pipeline.js";
+import {
+  checkTransition,
+  openPrBlocksDone,
+  isPipelineStatus,
+  isRepairReason,
+  isReviewReason,
+  keepRepairOnPatch,
+  resolvePipelineTarget,
+  PIPELINE_STATUSES,
+} from "./pipeline.js";
 
-test("a finished session enters the pipeline from executing or handoff", () => {
-  assert.equal(checkTransition("executing", "awaiting_ci").ok, true);
-  assert.equal(checkTransition("handoff", "awaiting_ci").ok, true);
+test("a finished session enters the pipeline, or parks on a question, from in_progress", () => {
+  assert.equal(checkTransition("in_progress", "awaiting_ci").ok, true);
+  assert.equal(checkTransition("in_progress", "needs_input").ok, true);
+  assert.equal(checkTransition("in_progress", "review").ok, false);
 });
 
-test("a no-commit session ending on a question parks from handoff", () => {
-  assert.equal(checkTransition("handoff", "needs_input").ok, true);
+test("the removed statuses are not pipeline states any more", () => {
+  for (const gone of ["executing", "handoff", "awaiting_review", "planned"]) {
+    assert.equal(checkTransition(gone, "awaiting_ci").ok, false, gone);
+    assert.equal(checkTransition(gone, "awaiting_merge").ok, false, gone);
+  }
+  assert.equal(checkTransition("awaiting_ci", "awaiting_review").ok, false);
+  assert.equal(isPipelineStatus("awaiting_review"), false);
 });
 
-test("the happy path runs CI -> merge -> deploy -> verify -> review", () => {
+test("the happy path runs CI -> merge -> deploy -> verify -> done, for every executor mode", () => {
   assert.equal(checkTransition("awaiting_ci", "awaiting_merge").ok, true);
   assert.equal(checkTransition("awaiting_merge", "deploying").ok, true);
   assert.equal(checkTransition("deploying", "verifying").ok, true);
-  assert.equal(checkTransition("verifying", "review").ok, true);
-  // foreman auto-closes a verified executorMode=agent task.
-  assert.equal(checkTransition("verifying", "done", undefined, "agent").ok, true);
+  for (const mode of ["agent", "human+agent", "human", undefined]) {
+    assert.equal(checkTransition("verifying", "done", undefined, mode).ok, true, String(mode));
+  }
+  // no post-deploy sign-off.
+  assert.equal(checkTransition("verifying", "review").ok, false);
   assert.equal(checkTransition("deploying", "done").ok, false);
 });
 
-test("a green PR can park at review when nothing will merge it automatically", () => {
-  // No auto-deploy opt-in on the project, or a merged PR whose repo has no
-  // LXC to deploy to - both end at a human, not at a failure.
-  assert.equal(checkTransition("awaiting_ci", "review").ok, true);
-  assert.equal(checkTransition("awaiting_merge", "review").ok, true);
+test("a merged PR with nothing to deploy is done, not review", () => {
+  assert.equal(checkTransition("awaiting_merge", "done").ok, true);
+  assert.equal(checkTransition("awaiting_merge", "review").ok, false);
 });
 
-test("a migration hold is released into merge, not straight into deploy", () => {
-  assert.equal(checkTransition("awaiting_review", "awaiting_merge").ok, true);
-  assert.equal(checkTransition("awaiting_review", "deploying").ok, false);
+test("a green PR held for a human goes to review, with a reason", () => {
+  assert.equal(checkTransition("awaiting_ci", "review").ok, true);
+  for (const reason of ["migration", "no_auto_deploy", "production"]) {
+    assert.deepEqual(checkTransition("awaiting_ci", "review", undefined, undefined, reason), { ok: true });
+  }
+  assert.equal(checkTransition("awaiting_ci", "review", undefined, undefined, "because").ok, false);
+  // a reason only belongs on a move into review.
+  assert.equal(checkTransition("awaiting_ci", "awaiting_merge", undefined, undefined, "migration").ok, false);
+  assert.equal(isReviewReason("migration"), true);
+  assert.equal(isReviewReason("awaiting_review"), false);
+});
+
+test("approving a review merges it, never straight into deploy", () => {
+  assert.equal(checkTransition("review", "awaiting_merge").ok, true);
+  assert.equal(checkTransition("review", "deploying").ok, false);
+  assert.equal(checkTransition("review", "done").ok, false, "a review with no PR is accepted with /complete");
+});
+
+test("an older foreman's moves are translated to today's", () => {
+  // the migration hold
+  assert.deepEqual(resolvePipelineTarget("awaiting_ci", "awaiting_review"), { to: "review", reviewReason: "migration" });
+  // the post-deploy sign-off, and merged-with-nothing-to-deploy
+  assert.deepEqual(resolvePipelineTarget("verifying", "review"), { to: "done", reviewReason: null });
+  assert.deepEqual(resolvePipelineTarget("awaiting_merge", "review"), { to: "done", reviewReason: null });
+  // green CI with no auto-deploy is still review; a reason rides along when sent
+  assert.deepEqual(resolvePipelineTarget("awaiting_ci", "review"), { to: "review", reviewReason: null });
+  assert.deepEqual(resolvePipelineTarget("awaiting_ci", "review", "no_auto_deploy"), { to: "review", reviewReason: "no_auto_deploy" });
+  // everything else passes through
+  assert.deepEqual(resolvePipelineTarget("awaiting_merge", "deploying"), { to: "deploying", reviewReason: null });
+  assert.deepEqual(resolvePipelineTarget("review", "awaiting_merge", "migration"), { to: "awaiting_merge", reviewReason: null });
+  // and every translated move is legal from where it starts
+  for (const [from, asked] of [["awaiting_ci", "awaiting_review"], ["verifying", "review"], ["awaiting_merge", "review"]] as const) {
+    const t = resolvePipelineTarget(from, asked);
+    assert.deepEqual(checkTransition(from, t.to, undefined, "human+agent", t.reviewReason), { ok: true }, `${from} -> ${asked}`);
+  }
 });
 
 test("skipping a stage is refused, and the refusal names what is allowed", () => {
@@ -102,9 +149,9 @@ test("a PATCH keeps repair evidence only on a requeue out of rework", () => {
   assert.equal(keepRepairOnPatch("review", "queued"), false);
   // The runner parking a task after its attempts ran out must not leave a
   // stale reason behind.
-  assert.equal(keepRepairOnPatch("executing", "rework"), false);
-  // The runner's claim reads the fields after moving to executing.
-  assert.equal(keepRepairOnPatch("queued", "executing"), true);
+  assert.equal(keepRepairOnPatch("in_progress", "rework"), false);
+  // The runner's claim reads the fields after moving to in_progress.
+  assert.equal(keepRepairOnPatch("queued", "in_progress"), true);
 });
 
 test("status and reason guards agree with the exported lists", () => {
@@ -122,7 +169,7 @@ test("review -> awaiting_merge (approve merges an open PR)", () => {
 
 test("needs_input parks and resumes without a repairReason", () => {
   assert.deepEqual(checkTransition("queued", "needs_input"), { ok: true });
-  assert.deepEqual(checkTransition("executing", "needs_input"), { ok: true });
+  assert.deepEqual(checkTransition("in_progress", "needs_input"), { ok: true });
   assert.deepEqual(checkTransition("needs_input", "queued"), { ok: true });
   assert.deepEqual(checkTransition("needs_input", "rework"), { ok: true });
   assert.deepEqual(checkTransition("needs_input", "rejected"), { ok: true });

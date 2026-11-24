@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { normalizeTaskEnums, parentMap, storyShouldComplete, dependencySatisfied, dependencyGate, unmergedDependencies, isReviewMode } from "./task-model.js";
+import { readFileSync } from "node:fs";
+import { STATUS_ALIASES, STATUS_MIGRATION, TASK_STATUSES, canonicalStatus, normalizeTaskEnums, parentMap, storyShouldComplete, dependencySatisfied, dependencyGate, unmergedDependencies, isReviewMode } from "./task-model.js";
 import { rankRunnableTasks, type RunnableTask } from "./plan.js";
 
 test("unknown status, taskType or executorMode is rejected", () => {
@@ -16,6 +17,49 @@ test("backlog is rewritten to defined", () => {
   const body: Record<string, unknown> = { status: "backlog" };
   assert.equal(normalizeTaskEnums(body).ok, true);
   assert.equal(body.status, "defined");
+});
+
+test("the 13 statuses, plus decomposed until stories get their own model", () => {
+  assert.deepEqual(
+    [...TASK_STATUSES].sort(),
+    ["awaiting_ci", "awaiting_merge", "decomposed", "defined", "deploying", "done", "idea", "in_progress", "needs_input", "queued", "rejected", "review", "rework", "verifying"],
+  );
+});
+
+test("old status names are accepted and rewritten to the current ones", () => {
+  const cases: [string, string][] = [
+    ["planned", "defined"],
+    ["todo", "defined"],
+    ["backlog", "defined"],
+    ["executing", "in_progress"],
+    ["awaiting_review", "review"],
+  ];
+  for (const [old, now] of cases) {
+    const body: Record<string, unknown> = { status: old };
+    assert.deepEqual(normalizeTaskEnums(body), { ok: true }, old);
+    assert.equal(body.status, now, old);
+    assert.equal(canonicalStatus(old), now);
+  }
+  assert.equal(canonicalStatus("queued"), "queued");
+  // handoff is an event now; nobody may set it as a status.
+  assert.equal(normalizeTaskEnums({ status: "handoff" }).ok, false);
+  for (const target of Object.values(STATUS_ALIASES)) assert.ok((TASK_STATUSES as readonly string[]).includes(target), target);
+});
+
+test("migration 0049 moves every removed status where STATUS_MIGRATION says", () => {
+  const sql = readFileSync(new URL("../drizzle/0049_task_status_model.sql", import.meta.url), "utf8");
+  const moved = new Map<string, string>();
+  for (const m of sql.matchAll(/SET "status" = '(\w+)'[^;]*?WHERE "status" (?:= '(\w+)'|IN \(([^)]*)\))/g)) {
+    const froms = m[2] ? [m[2]] : m[3].split(",").map((s) => s.trim().replace(/'/g, ""));
+    for (const from of froms) moved.set(from, m[1]);
+  }
+  assert.deepEqual(Object.fromEntries([...moved].sort()), Object.fromEntries(Object.entries(STATUS_MIGRATION).sort()));
+  for (const target of moved.values()) assert.ok((TASK_STATUSES as readonly string[]).includes(target), target);
+  assert.ok(!moved.has("decomposed"), "decomposed is left for the stories change");
+  // a task leaving handoff gets a comment saying why
+  assert.match(sql, /INSERT INTO "comments"[\s\S]*handoff is no longer a status/);
+  // the migration hold keeps its meaning as a reason
+  assert.match(sql, /"status" = 'review', "review_reason" = 'migration'/);
 });
 
 test("a story is never ranked runnable, even when queued", () => {
@@ -38,9 +82,9 @@ test("parentMap reads parent/child rows in both directions", () => {
 });
 
 test("story completes on its last child finishing, not before", () => {
-  assert.equal(storyShouldComplete("planned", ["done", "executing"]), false);
-  assert.equal(storyShouldComplete("planned", ["done", "rejected"]), true);
-  assert.equal(storyShouldComplete("planned", []), false);
+  assert.equal(storyShouldComplete("defined", ["done", "in_progress"]), false);
+  assert.equal(storyShouldComplete("defined", ["done", "rejected"]), true);
+  assert.equal(storyShouldComplete("defined", []), false);
   assert.equal(storyShouldComplete("done", ["done"]), false);
 });
 
@@ -54,8 +98,8 @@ test("a depends_on target in review satisfies only when every PR is merged", () 
 });
 
 test("verifying -> done closes the parent story when it was the last open child", () => {
-  assert.equal(storyShouldComplete("planned", ["done", "rejected", "verifying"]), false);
-  assert.equal(storyShouldComplete("planned", ["done", "rejected", "done"]), true);
+  assert.equal(storyShouldComplete("defined", ["done", "rejected", "verifying"]), false);
+  assert.equal(storyShouldComplete("defined", ["done", "rejected", "done"]), true);
 });
 
 const inReview = (taskId: number, prStates: string[] = ["open"]) => ({ taskId, status: "review", prStates });
@@ -82,7 +126,7 @@ test("a playtest task waits when stacking isn't possible", () => {
   assert.deepEqual(dependencyGate("playtest", [inReview(1, [])]), { blocked: true });
   assert.deepEqual(dependencyGate("playtest", [inReview(1, ["closed"])]), { blocked: true });
   // not in review yet
-  assert.deepEqual(dependencyGate("playtest", [{ taskId: 1, status: "executing", prStates: ["open"] }]), { blocked: true });
+  assert.deepEqual(dependencyGate("playtest", [{ taskId: 1, status: "in_progress", prStates: ["open"] }]), { blocked: true });
   assert.deepEqual(dependencyGate("playtest", [{ taskId: 1, status: "awaiting_ci", prStates: ["open"] }]), { blocked: true });
   // one stackable and one not started
   assert.deepEqual(dependencyGate("playtest", [inReview(1), { taskId: 2, status: "queued", prStates: [] }]), { blocked: true });

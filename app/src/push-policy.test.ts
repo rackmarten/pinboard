@@ -36,7 +36,7 @@ test("filter: only things that need a human push", () => {
   assert.equal(category(ev("pipeline", { to: "queued", repairReason: "ci_failed" })), null, "handed to an agent");
   // Reviews never push on their own; they only count in the digest.
   assert.equal(category(ev("status", { to: "review" })), "review");
-  assert.equal(category(ev("pipeline", { to: "awaiting_review" })), "review");
+  assert.equal(category(ev("pipeline", { to: "review", reviewReason: "migration" })), "review");
 });
 
 test("healthKey names reporter and check", () => {

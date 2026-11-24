@@ -11,12 +11,10 @@ import { parentMap } from "./task-model.js";
 // run, the post-PR pipeline, review, or parked on a question) ...
 export const ACTIVE_CHILD_STATUSES: ReadonlySet<string> = new Set([
   "queued",
-  "executing",
+  "in_progress",
   "needs_input",
-  "handoff",
   "awaiting_ci",
   "awaiting_merge",
-  "awaiting_review",
   "deploying",
   "verifying",
   "review",
@@ -27,8 +25,8 @@ export const NOW_ACTIVITY_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 // Sessions not seen for this long are left out of finishedSessions, so the
 // scan stays bounded as the link table grows.
 export const FINISHED_SESSIONS_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
-const RUNNING_STATUSES: ReadonlySet<string> = new Set(["executing"]);
-const REVIEW_STATUSES: ReadonlySet<string> = new Set(["review", "awaiting_review"]);
+const RUNNING_STATUSES: ReadonlySet<string> = new Set(["in_progress"]);
+const REVIEW_STATUSES: ReadonlySet<string> = new Set(["review"]);
 const HUMAN_WAITING_STATUSES: ReadonlySet<string> = new Set(["queued", "defined"]);
 const STORY_CLOSED_STATUSES = ["done", "rejected"];
 const MAX_SESSIONS = 3;

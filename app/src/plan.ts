@@ -734,15 +734,17 @@ async function loadPlannerInputs(licenseId: number, now: Date) {
     // system spawning too many paid agents at once. Same join
     // getExecutingSnapshot uses, for the same reason: `tasks` carries no
     // "current actor" column.
-    sql<{ id: number; actor_type: string | null; actor_name: string | null }[]>`
-      select t.id, ev.actor_type, ev.actor_name
+    sql<{ id: number; actor_type: string | null; actor_name: string | null; agent_run: boolean }[]>`
+      select t.id, ev.actor_type, ev.actor_name,
+        (ev.actor_type = 'agent' and t.executor_mode != 'human'
+          and t.lease_expires_at is not null and t.lease_expires_at > now()) as agent_run
       from tasks t
       left join lateral (
         select actor_type, actor_name from task_events
         where task_id = t.id and event_type = 'claim'
         order by created_at desc limit 1
       ) ev on true
-      where t.status = 'executing'
+      where t.status = 'in_progress'
     `,
     sql<{ project_id: number; estimated_effort: number | null; cost_usd: string; duration_ms: number | null }[]>`
       select t.project_id, t.estimated_effort, h.cost_usd, h.duration_ms
@@ -765,8 +767,12 @@ async function loadPlannerInputs(licenseId: number, now: Date) {
     createdAt: toIso(row.createdAt),
   });
 
-  const humanHeldIds = new Set(executingActors.filter((r) => r.actor_type === "human").map((r) => r.id));
-  const executingRows = await db.select().from(tasks).where(eq(tasks.status, "executing"));
+  // in_progress covers a person working a task by hand, a status set by hand
+  // with no claim at all, and an agent claim whose lease lapsed (a crashed
+  // run); only a live agent lease is a run holding a slot, the same rule as
+  // governor.ts's getExecutingSnapshot.
+  const humanHeldIds = new Set(executingActors.filter((r) => !r.agent_run).map((r) => r.id));
+  const executingRows = await db.select().from(tasks).where(eq(tasks.status, "in_progress"));
 
   // which seat each running task is held by, so a per-license
   // concurrency limit can be counted against the right one. `tasks` has no
@@ -980,7 +986,7 @@ export async function getPlanNext(licenseId: number, now = new Date(), override 
 // startableNow decides, so the direct path and the dispatcher can't drift into
 // disagreeing about what's allowed.
 //
-// A task already in `executing` (a resumed attempt) is evaluated as itself
+// A task already in `in_progress` (a resumed attempt) is evaluated as itself
 // rather than being counted as its own competitor - otherwise a retry would
 // always trip the conflict rule against its own repo.
 export interface PlanGateResult {
@@ -1007,7 +1013,7 @@ export async function getPlanGate(taskId: number, licenseId: number, now = new D
   if (!candidate) {
     return {
       ok: false,
-      reason: `task ${taskId} is not queued or executing`,
+      reason: `task ${taskId} is not queued or in_progress`,
       waitUntil: null,
       budgetUsd: RUN_BUDGET_FLOOR_USD,
     };

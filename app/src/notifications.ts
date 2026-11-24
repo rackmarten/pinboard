@@ -75,7 +75,12 @@ export function deriveNotification(
       }
       // parked on an unanswered question; the thread is where the operator answers.
       if (to === "needs_input") return { kind: "question", title: `Agent needs input: #${task.id}`, body: str(p.reason) ?? null, url: typeof p.threadId === "number" ? `/chat/${p.threadId}` : taskUrl };
-      if (to === "awaiting_review") return { kind: "approval", title: `Waiting for approval: ${ref}`, body: "Approve & merge from the review queue.", url: "/review" };
+      // a review with a reason is a PR waiting for a human before it merges.
+      const held = str(p.reviewReason);
+      if (to === "review" && held) {
+        const body = held === "migration" ? "The diff touches a migration. Read it, then approve & merge from the review queue." : "Approve & merge from the review queue.";
+        return { kind: "approval", title: `Waiting for approval: ${ref}`, body, url: "/review" };
+      }
       if (to === "review") return { kind: "review", title: `Ready for review: ${ref}`, body: null, url: taskUrl };
       return null;
     }

@@ -29,7 +29,7 @@ async function load(): Promise<void> {
   loading.value = true;
   error.value = null;
   try {
-    tasks.value = await getTaskSummaries({ status: ["executing"] });
+    tasks.value = await getTaskSummaries({ status: ["in_progress"] });
     await refreshLatestActivity(tasks.value);
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
@@ -44,7 +44,7 @@ onMounted(async () => {
 });
 
 usePolling(() =>
-  getTaskSummaries({ status: ["executing"] })
+  getTaskSummaries({ status: ["in_progress"] })
     .then(async (t) => {
       tasks.value = t;
       await refreshLatestActivity(t);
@@ -159,7 +159,7 @@ async function control(task: TaskSummary, action: "stop" | "kill"): Promise<void
     <v-empty-state
       v-else-if="!loading"
       icon="mdi-robot-outline"
-      title="No tasks currently executing"
+      title="No tasks in progress"
     />
   </div>
 </template>

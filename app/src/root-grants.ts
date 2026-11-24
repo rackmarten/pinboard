@@ -103,7 +103,7 @@ export function validateTtlHours(value: unknown): Check<{ hours: number }> {
 export function checkGrantable(task: { status: string; rootScope: number[] }, hasRootLabel: boolean): Check {
   if (!hasRootLabel) return { ok: false, reason: `only a task labelled '${ROOT_LABEL}' can be granted root access` };
   if (task.rootScope.length === 0) return { ok: false, reason: "set the task's root scope (CTIDs) before granting" };
-  if (task.status === "executing" || task.status === "handoff" || isPipelineStatus(task.status)) {
+  if (task.status === "in_progress" || isPipelineStatus(task.status)) {
     return { ok: false, reason: `task is '${task.status}'; grant it once it is no longer being worked` };
   }
   if (task.status === "done" || task.status === "rejected") {

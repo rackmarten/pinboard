@@ -4,16 +4,16 @@
 export const TASK_STATUSES = [
   "idea",
   "defined",
-  "planned",
+  // a story's label until stories get a status of their own design; nothing
+  // else uses it.
   "decomposed",
   "queued",
-  "executing",
+  // being worked on, by a person (a claim) or an agent run (a leased claim).
+  "in_progress",
   // an agent paused on an unanswered question (see pipeline.ts).
   "needs_input",
-  "handoff",
   "awaiting_ci",
   "awaiting_merge",
-  "awaiting_review",
   "deploying",
   "verifying",
   "review",
@@ -51,13 +51,32 @@ function oneOf(field: string, allowed: readonly string[], value: unknown): EnumC
   return { ok: false, reason: `${field} must be one of ${allowed.join(", ")}` };
 }
 
-// Validates the enum fields of a POST/PATCH /tasks body in place. `backlog`
-// was never a real status, but the homelab scripts (and older skill text)
-// still send it for "written down, not yet ready", so it's accepted as an
-// alias of `defined` rather than breaking them; migration 0035 moved the rows
-// that got stored before this check existed.
+// Old names a caller may still send, mapped to the status they mean now.
+// `backlog` and `todo` were never real statuses but scripts and older skill
+// text send them for "written down, not yet ready"; `planned`, `executing`
+// and `awaiting_review` were removed by migration 0049, and a foreman or
+// script that predates it keeps working through these.
+export const STATUS_ALIASES: Readonly<Record<string, string>> = {
+  backlog: "defined",
+  todo: "defined",
+  planned: "defined",
+  executing: "in_progress",
+  awaiting_review: "review",
+};
+
+// What migration 0049 did to stored rows: every alias above, plus `handoff`
+// (an event now, not a status) to rework, with a comment. The test checks the
+// SQL against this.
+export const STATUS_MIGRATION: Readonly<Record<string, string>> = { ...STATUS_ALIASES, handoff: "rework" };
+
+export function canonicalStatus(status: string): string {
+  return STATUS_ALIASES[status] ?? status;
+}
+
+// Validates the enum fields of a POST/PATCH /tasks body in place, rewriting
+// an aliased status (STATUS_ALIASES) to its current name first.
 export function normalizeTaskEnums(body: Record<string, unknown>): EnumCheck {
-  if (body.status === "backlog") body.status = "defined";
+  if (typeof body.status === "string") body.status = canonicalStatus(body.status);
   for (const [field, allowed] of [
     ["status", TASK_STATUSES],
     ["taskType", TASK_TYPES],

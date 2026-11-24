@@ -98,16 +98,16 @@ test("answering requeues a task parked in needs_input and posts into its thread"
 });
 
 test("answering a task that is not in needs_input only records the answer", async () => {
-  const { store, taskStatuses, events } = memoryStore({ 7: "executing" }, { 7: 42 });
+  const { store, taskStatuses, events } = memoryStore({ 7: "in_progress" }, { 7: 42 });
   const ask = await createAsk(store, 7, { question: "Which db?", options }, agent);
   const result = await answerAsk(store, ask.id, { option: 1 }, human);
   assert.equal(result.ask.status, "answered");
-  assert.equal(taskStatuses[7], "executing");
+  assert.equal(taskStatuses[7], "in_progress");
   assert.equal(events.filter((e) => e.eventType === "status").length, 0);
 });
 
 test("an answer needs an option in range or text, and only once", async () => {
-  const { store } = memoryStore({ 7: "executing" });
+  const { store } = memoryStore({ 7: "in_progress" });
   const ask = await createAsk(store, 7, { question: "Which db?", options }, agent);
   await assert.rejects(answerAsk(store, ask.id, {}, human), (e: AskError) => e.statusCode === 400);
   await assert.rejects(answerAsk(store, ask.id, { option: 5 }, human), (e: AskError) => e.statusCode === 400);
@@ -116,7 +116,7 @@ test("an answer needs an option in range or text, and only once", async () => {
 });
 
 test("answer-recommended answers only open questions", async () => {
-  const { store, asks } = memoryStore({ 7: "needs_input", 8: "executing" });
+  const { store, asks } = memoryStore({ 7: "needs_input", 8: "in_progress" });
   const q1 = await createAsk(store, 7, { question: "Which db?", options }, agent);
   const q2 = await createAsk(store, 8, { question: "Which port?", options: [{ label: "80" }, { label: "8080", recommended: true }] }, agent);
   const done = await createAsk(store, 8, { question: "Which name?", options }, agent);
@@ -142,13 +142,13 @@ test("vetoing an assumption moves the task to rework with the veto text", async 
 });
 
 test("a question cannot be vetoed", async () => {
-  const { store } = memoryStore({ 7: "executing" });
+  const { store } = memoryStore({ 7: "in_progress" });
   const ask = await createAsk(store, 7, { question: "Which db?", options }, agent);
   await assert.rejects(vetoAsk(store, ask.id, { text: "no" }, human), (e: AskError) => e.statusCode === 400);
 });
 
 test("answering an assumption accepts it", async () => {
-  const { store } = memoryStore({ 7: "executing" });
+  const { store } = memoryStore({ 7: "in_progress" });
   const ask = await createAsk(store, 7, { kind: "assumption", question: "Went with ESM" }, agent);
   const result = await answerAsk(store, ask.id, {}, human);
   assert.equal(result.ask.status, "accepted");

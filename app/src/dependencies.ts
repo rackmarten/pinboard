@@ -93,10 +93,11 @@ export async function mergeBlockers(taskId: number): Promise<number[]> {
   return unmergedDependencies(entry.targets);
 }
 
-// statuses a stacked dependent sits in once its PR exists but before a human
-// has approved it. Pipeline statuses after that (awaiting_merge, deploying)
-// can't happen while the parent is unmerged: the approve guard refuses them.
-const RESTACK_STATUSES = ["review", "awaiting_review"];
+// the status a stacked dependent sits in once its PR exists but before a
+// human has approved it. Pipeline statuses after that (awaiting_merge,
+// deploying) can't happen while the parent is unmerged: the approve guard
+// refuses them.
+const RESTACK_STATUSES = ["review"];
 
 // a playtest task was rejected outright: dependents that stacked a PR on it
 // carry its rejected work, so they go back to rework to be rebuilt on main.
@@ -121,11 +122,11 @@ export async function reworkStackedDependents(parentId: number, actor: { actorTy
   const body = `Parent #${parentId} was rejected. Rebuild this on main without it.`;
   const moved: number[] = [];
   for (const row of rows) {
-    if (!withPr.has(row.id) && row.status !== "executing") continue;
+    if (!withPr.has(row.id) && row.status !== "in_progress") continue;
     const [comment] = await db.insert(comments).values({ taskId: row.id, authorType: "system", authorName: "pinboard", body }).returning({ id: comments.id });
     await recordEvent({ taskId: row.id, eventType: "comment", actorType: "system", actorName: "pinboard", payload: { commentId: comment.id } });
     if (!RESTACK_STATUSES.includes(row.status)) continue;
-    await db.update(tasks).set({ status: "rework", updatedAt: new Date() }).where(eq(tasks.id, row.id));
+    await db.update(tasks).set({ status: "rework", reviewReason: null, updatedAt: new Date() }).where(eq(tasks.id, row.id));
     await recordEvent({ taskId: row.id, eventType: "status", ...actor, payload: { from: row.status, to: "rework", reason: body } });
     moved.push(row.id);
   }

@@ -370,7 +370,7 @@ export async function getExecutingSnapshot(): Promise<ExecutingTask[]> {
   // one waits, without loosening the concurrency limits themselves.
   //
   // the same stall recurred for a different reason - an
-  // executorMode: "human" umbrella task (e.g. #146) left in `executing` for
+  // executorMode: "human" umbrella task left in `in_progress` for
   // days while its agent-run children shipped. Such a task has no live
   // lease at all (leaseExpiresAt is only ever set by the claim route's
   // agent-claim path), yet the old `lease_expires_at is null or ... > now()`
@@ -381,17 +381,20 @@ export async function getExecutingSnapshot(): Promise<ExecutingTask[]> {
   // lease expired without a handoff. The `executor_mode != 'human'` check
   // stays alongside it as belt and braces (matching plan.ts's separate
   // human-hold exclusion) for the case where a lease is somehow live on a
-  // task no agent is actually running.
+  // task no agent is actually running. And the latest claim has to be an
+  // agent's: in_progress also covers a person working a task by hand, which
+  // never takes an agent slot.
   const rows = await sql<{ task_id: number; project_id: number; actor_name: string | null }[]>`
     select t.id as task_id, t.project_id, ev.actor_name
     from tasks t
     left join lateral (
-      select actor_name from task_events
+      select actor_type, actor_name from task_events
       where task_id = t.id and event_type = 'claim'
       order by created_at desc limit 1
     ) ev on true
-    where t.status = 'executing'
+    where t.status = 'in_progress'
       and t.executor_mode != 'human'
+      and ev.actor_type = 'agent'
       and t.lease_expires_at is not null and t.lease_expires_at > now()
       and not exists (
         select 1 from chat_threads ct

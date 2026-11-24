@@ -68,7 +68,7 @@ test("only a labelled, scoped task that nothing is working can be granted", () =
   assert.equal(checkGrantable({ status: "queued", rootScope: [301] }, true).ok, true);
   assert.equal(checkGrantable({ status: "defined", rootScope: [301] }, false).ok, false);
   assert.equal(checkGrantable({ status: "defined", rootScope: [] }, true).ok, false);
-  for (const status of ["executing", "handoff", "awaiting_ci", "deploying", "done", "rejected"]) {
+  for (const status of ["in_progress", "awaiting_ci", "deploying", "done", "rejected"]) {
     assert.equal(checkGrantable({ status, rootScope: [301] }, true).ok, false, status);
   }
 });
@@ -102,7 +102,7 @@ test("moving a root task into queued needs a live grant", () => {
   assert.equal(checkQueueMove("defined", "queued", true, false).ok, false);
   assert.equal(checkQueueMove("rework", "queued", true, false).ok, false);
   // foreman's session-limit refund, inside the grant window
-  assert.equal(checkQueueMove("executing", "queued", true, true).ok, true);
+  assert.equal(checkQueueMove("in_progress", "queued", true, true).ok, true);
 });
 
 test("the queue gate leaves unlabelled tasks, other moves and no-op edits alone", () => {
