@@ -181,10 +181,10 @@ the root. Old root API calls are no longer aliased.
 | `GET /projects` / `POST /projects` | List / create projects (`localPath` is the local checkout's path relative to `work`'s workspace root, e.g. `my-org/my-repo`; used by `work plan sync`) |
 | `GET /projects/:id` / `PATCH /projects/:id` | Read / update a project. `reviewMode` is `standard` or `playtest` (400 otherwise). `defaultReasoningEffort` is `medium`, `high` or `null` (see "Reasoning effort") |
 | `GET /projects/:id/handoffs?limit=` | Latest handoffs for a project, most recent first - powers `work plan sync` |
-| `GET /tasks?projectId=&status=&taskType=&executorMode=&parentTaskId=&q=&doneSince=&view=` | Filtered task list. Each row carries `parentTaskId` (from `parent`/`child` relations, `null` if none); `parentTaskId=` lists that task's children. `q` matches the id (`12` or `#12`) or title and description keywords. `doneSince=<ISO time>` keeps `done` tasks updated after it. `view=summary` leaves out `description`, the repair notes, the root-grant and session fields, which is what the PWA's lists ask for |
+| `GET /tasks?projectId=&status=&taskType=&executorMode=&parentTaskId=&q=&doneSince=&view=` | Filtered task list. Each row carries `parentTaskId` (from `parent`/`child` relations, `null` if none); `parentTaskId=` lists that task's children. `q` matches the id (`12` or `#12`) or title and description keywords. `doneSince=<ISO time>` keeps `done` tasks updated after it. `view=summary` leaves out `description`, the repair notes, the root-grant and session fields, which is what the PWA's lists ask for. A `story` row also carries its `rollup` (see "Phases and stories") |
 | `GET /tasks/counts` | Task counts as `[{status, projectId, count}]`, for the Dashboard |
 | `POST /tasks` | Create a task. `status`/`taskType`/`executorMode` must be known values (list in `app/src/task-model.ts`) or it's a 400; an old status name (`backlog`, `planned`, `executing`, ..., see "Task statuses") is rewritten to its current one. `reasoningEffort` is `medium`, `high` or `null`. Same rules on `PATCH /tasks/:id` |
-| `GET /tasks/:id` | Task detail, including its `parentTaskId`, labels, open asks and `stackOn` (see "Playtest review") |
+| `GET /tasks/:id` | Task detail, including its `parentTaskId`, labels, open asks, `stackOn` (see "Playtest review") and, on a `story`, its `rollup` (see "Phases and stories") |
 | `PATCH /tasks/:id` | Update a task. When a child of a `story` task reaches `done`/`rejected` (here, via `/complete` or the pipeline) and all its siblings are too, the story moves to `done` with a `status` event from `system`/`pinboard`. A `story` is never ranked runnable by `/plan` |
 | `GET /tasks/:id/comments` / `POST /tasks/:id/comments` | Task discussion thread |
 | `GET /tasks/:id/root-grant` | Root grant state: `{ active, ctids, expiresAt, grantedAt, grantedBy }`. What a root proxy asks before every call |
@@ -307,8 +307,7 @@ Thirteen, one meaning each (`TASK_STATUSES` in `app/src/task-model.ts`):
 | `rework` | Sent back, for a human or a requeue |
 | `done`, `rejected` | Closed |
 
-`decomposed` is still accepted as a story's label until stories get their
-own model. A handoff is an event, not a status: `POST /tasks/:id/handoff`
+A handoff is an event, not a status: `POST /tasks/:id/handoff`
 records it and leaves the status alone, and the caller moves the task on.
 The pipeline's moves: `in_progress -> awaiting_ci` (the session ended at a
 PR), `awaiting_ci -> awaiting_merge` (green, auto-deploy allowed) or
@@ -316,6 +315,30 @@ PR), `awaiting_ci -> awaiting_merge` (green, auto-deploy allowed) or
 `awaiting_merge -> deploying`, or `-> done` when the repo has nothing to
 deploy, `deploying -> verifying -> done` for every executor mode. There is no
 sign-off after a deploy; testing by hand is its own human task in the story.
+
+#### Phases and stories
+
+The UI groups statuses into phases (`STATUS_PHASES` in
+`app/src/task-model.ts`): Backlog (`idea`, `defined`), Ready (`queued`),
+In progress (`in_progress`), Pipeline (`awaiting_ci`, `awaiting_merge`,
+`deploying`, `verifying`), Needs you (`needs_input`, `review`, `rework`) and
+Done (`done`, and `rejected`, hidden by default).
+
+A `story` has no workflow status of its own. It is stored as `defined` while
+open (`decomposed`, its old label, is still accepted and stored as
+`defined`) and moves to `done` by itself once every child is `done` or
+`rejected`; closing it by hand (`done`, `rejected`) still works. The
+dispatcher skips a story by its type, whatever its status. What a story
+shows is its `rollup`, derived from its children on `GET /tasks` and
+`GET /tasks/:id` with one grouped query for the whole list:
+
+- `counts`: children per phase (`backlog`, `ready`, `in_progress`,
+  `pipeline`, `needs_you`, `done`), rejected ones left out and empty phases
+  omitted.
+- `phase`: `needs_you` if any child is there, else `in_progress`, else
+  `pipeline`, else `ready`, else `backlog`; `done` when the story is closed
+  or every child is `done` or `rejected`. A story with no children is
+  `backlog`.
 
 A task held in `review` carries a `reviewReason`, shown on its review card:
 `migration` (the diff touches a drizzle migration, so main never carries an

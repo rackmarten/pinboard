@@ -1036,9 +1036,12 @@ export async function getPlanGate(taskId: number, licenseId: number, now = new D
   if (eligible.length === 0) {
     return {
       ok: false,
-      reason: blocked.has(taskId)
-        ? `task ${taskId} is waiting on an unfinished dependency`
-        : `task ${taskId} is not agent-runnable (executorMode/autonomyLevel)`,
+      reason:
+        candidate.taskType === "story"
+          ? `task ${taskId} is a story, which groups tasks and never runs itself`
+          : blocked.has(taskId)
+            ? `task ${taskId} is waiting on an unfinished dependency`
+            : `task ${taskId} is not agent-runnable (executorMode/autonomyLevel)`,
       waitUntil: null,
       budgetUsd,
     };

@@ -18,6 +18,7 @@ import { useTasks } from "../composables/useTasks.js";
 import { useTaskSearch } from "../composables/useTaskSearch.js";
 import TaskFormDialog from "../components/TaskFormDialog.vue";
 import TaskStatusChip from "../components/TaskStatusChip.vue";
+import StoryRollupChip from "../components/StoryRollupChip.vue";
 import SortableDataTable, { type SortItem, type SortableDataTableHeader } from "../components/SortableDataTable.vue";
 import { taskTypeColor, taskTypeIcon } from "../display.js";
 import { groupTasks } from "../story.js";
@@ -470,7 +471,9 @@ async function applyBulkEdit(): Promise<void> {
         />
       </template>
       <template #item.status="{ item }">
+        <StoryRollupChip v-if="item.rollup" :rollup="item.rollup" />
         <v-select
+          v-else
           :model-value="item.status"
           :items="TASK_STATUSES as readonly string[]"
           density="compact"

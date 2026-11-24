@@ -25,11 +25,12 @@ const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
 // verifying), review (a human approves the result before it lands), rework,
 // done and rejected (a terminal status set by hand for an accidental
 // duplicate or otherwise unwanted task, so it can be hidden from default
-// views without deleting the row). `decomposed` is still a story's label
-// until stories get their own model. Migration 0049 folded the removed ones
-// in (planned -> defined, executing -> in_progress, awaiting_review ->
-// review, handoff -> rework); task-model.ts's STATUS_ALIASES still accepts
-// their old names on the way in.
+// views without deleting the row). A story has no workflow status of its
+// own: it is defined while open and the API derives what it shows from its
+// children (task-model.ts's storyRollup). Migration 0049 folded the removed
+// ones in (planned -> defined, executing -> in_progress, awaiting_review ->
+// review, handoff -> rework) and 0050 made decomposed stories defined;
+// task-model.ts's STATUS_ALIASES still accepts their old names on the way in.
 //
 // The pipeline statuses are driven by a cheap foreman poller rather than by
 // the agent session that opened the PR. They live here, in tasks.status,

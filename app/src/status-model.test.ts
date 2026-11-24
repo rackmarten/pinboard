@@ -82,7 +82,7 @@ describe("status model against a real database", { skip: adminUrl ? false : "PIN
             executing: "in_progress",
             awaiting_review: "review",
             handoff: "rework",
-            decomposed: "decomposed",
+            decomposed: "defined",
             queued: "queued",
             review: "review",
             awaiting_ci: "awaiting_ci",

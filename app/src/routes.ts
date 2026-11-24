@@ -26,7 +26,7 @@ import {
 } from "./db/schema.js";
 import { mergeChecklist, parseChecklist, parseChecklistPatch } from "./checklist.js";
 import { getCostRollup, getUsageSummary, InteractiveDedupe, licenseIdForLinuxUser, runDailyDigest } from "./usage.js";
-import { canonicalStatus, normalizeTaskEnums, parentMap, storyShouldComplete, isTerminalStatus, dependencySatisfied, isReviewMode, REVIEW_MODES, isReasoningEffort, REASONING_EFFORTS, effectiveReasoningEffort } from "./task-model.js";
+import { canonicalStatus, normalizeTaskEnums, parentMap, storyRollup, storyShouldComplete, isTerminalStatus, type StoryRollup, dependencySatisfied, isReviewMode, REVIEW_MODES, isReasoningEffort, REASONING_EFFORTS, effectiveReasoningEffort } from "./task-model.js";
 import { mergeBlockers, reworkStackedDependents, stackOnFor } from "./dependencies.js";
 import { readinessApplies, readinessFailures, toWorkspaceRepos, type ReadinessTask, type WorkspaceRepo } from "./readiness.js";
 import { listJournal, parseJournalQuery, parseTaskEventsQuery, recordEvent as recordJournalEvent, unreadNotificationCount } from "./journal.js";
@@ -258,6 +258,41 @@ async function childIdsOf(parentId: number): Promise<number[]> {
       ),
     );
   return [...new Set(rows.map((r) => (r.relationType === "parent" ? r.fromTaskId : r.toTaskId)))];
+}
+
+// each story's rollup (storyRollup) from one grouped query over all of
+// their children, so the task list pays one round trip however many stories
+// it holds. A child related in both directions is counted once.
+async function storyRollupsFor(stories: readonly { id: number; status: string }[]): Promise<Map<number, StoryRollup>> {
+  if (!stories.length) return new Map();
+  const ids = stories.map((s) => s.id);
+  const isParentRow = sqlRaw`${taskRelations.relationType} = 'parent'`;
+  const storyId = sqlRaw<number>`case when ${isParentRow} then ${taskRelations.toTaskId} else ${taskRelations.fromTaskId} end`.mapWith(Number);
+  const childId = sqlRaw`case when ${isParentRow} then ${taskRelations.fromTaskId} else ${taskRelations.toTaskId} end`;
+  const rows = await db
+    .select({ storyId, status: tasks.status, count: sqlRaw<number>`count(distinct ${tasks.id})::int` })
+    .from(taskRelations)
+    .innerJoin(tasks, eq(tasks.id, childId))
+    .where(
+      or(
+        and(eq(taskRelations.relationType, "parent"), inArray(taskRelations.toTaskId, ids)),
+        and(eq(taskRelations.relationType, "child"), inArray(taskRelations.fromTaskId, ids)),
+      ),
+    )
+    .groupBy(storyId, tasks.status);
+  const childStatuses = new Map<number, string[]>();
+  for (const r of rows) {
+    const list = childStatuses.get(r.storyId) ?? [];
+    for (let i = 0; i < r.count; i++) list.push(r.status);
+    childStatuses.set(r.storyId, list);
+  }
+  return new Map(stories.map((s) => [s.id, storyRollup(s.status, childStatuses.get(s.id) ?? [])]));
+}
+
+// the list and detail rows with a `rollup` on every story.
+async function withStoryRollups<T extends { id: number; taskType: string; status: string }>(rows: T[]): Promise<(T & { rollup?: StoryRollup })[]> {
+  const rollups = await storyRollupsFor(rows.filter((t) => t.taskType === "story"));
+  return rows.map((t) => (rollups.has(t.id) ? { ...t, rollup: rollups.get(t.id) } : t));
 }
 
 // once a child lands in done/rejected, its story follows to done
@@ -728,7 +763,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       .where(conditions.length ? and(...conditions) : undefined)
       .orderBy(desc(tasks.priority), desc(tasks.createdAt));
     const parents = await parentIdsFor(rows.map((t) => t.id));
-    return (await withEffectiveReasoningEffort(rows)).map((t) => ({ ...t, parentTaskId: parents.get(t.id) ?? null }));
+    const withEffort = (await withEffectiveReasoningEffort(rows)).map((t) => ({ ...t, parentTaskId: parents.get(t.id) ?? null }));
+    return withStoryRollups(withEffort);
   });
 
   // task counts by status and project, for the Dashboard: one small row
@@ -774,7 +810,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         description: body.description,
         keywords: taskKeywords(body),
         taskType: body.taskType ?? "implementation",
-        status: body.status ?? "idea",
+        // a story has no workflow status of its own: open means defined.
+        status: body.status ?? (body.taskType === "story" ? "defined" : "idea"),
         executorMode: body.executorMode ?? "human",
         priority: body.priority ?? 0,
         autonomyLevel: body.autonomyLevel,
@@ -803,7 +840,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     // open and recent asks, so the runner can put the Q&A into
     // the next attempt's prompt. stackOn: in a playtest project, the
     // dependency whose PR branch foreman cuts this task's branch from.
-    const [withEffort] = await withEffectiveReasoningEffort([task]);
+    const [withEffort] = await withStoryRollups(await withEffectiveReasoningEffort([task]));
     const parentTaskId = (await parentIdsFor([id])).get(id) ?? null;
     return { ...withEffort, parentTaskId, labels: taskLabelRows, asks: await asksForTask(id), stackOn: await stackOnFor(id) };
   });

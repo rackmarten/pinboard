@@ -110,8 +110,8 @@ describe("against a real database", { skip: adminUrl ? false : "PINBOARD_TEST_DA
     const counts = res.json() as { status: string; projectId: number; count: number }[];
     const sorted = counts.sort((a, b) => a.projectId - b.projectId || a.status.localeCompare(b.status));
     assert.deepEqual(sorted, [
+      { status: "defined", projectId: projectA, count: 1 },
       { status: "done", projectId: projectA, count: 1 },
-      { status: "idea", projectId: projectA, count: 1 },
       { status: "review", projectId: projectA, count: 1 },
       { status: "done", projectId: projectB, count: 1 },
       { status: "idea", projectId: projectB, count: 1 },

@@ -8,6 +8,11 @@ publishes the container image `ghcr.io/rackmarten/pinboard` at that version.
 ## [Unreleased]
 
 ### Added
+- Stories carry a `rollup` on `GET /tasks` (`view=summary` too) and
+  `GET /tasks/:id`: their children counted per phase (Backlog, Ready, In
+  progress, Pipeline, Needs you, Done) and one phase for the story as a
+  whole, from a single grouped query for the list. The PWA shows it wherever
+  a story used to show a status chip.
 - `POST /session-links` records which interactive Claude Code sessions
   touched which tasks, and `GET /now` lists the stories in play right now:
   progress, running children, what each is waiting on (open questions,
@@ -82,6 +87,12 @@ publishes the container image `ghcr.io/rackmarten/pinboard` at that version.
   never toward the period or session spend that gates dispatch.
 
 ### Changed
+- Stories have no workflow status of their own: an open story is stored as
+  `defined` and shows the phase derived from its children. Migration 0050
+  makes every `decomposed` story `defined`; `decomposed` is still accepted
+  on the way in, as `defined`, and a story created without a status is
+  `defined`. A story's status menu offers only `defined`,
+  `done` and `rejected`, and `/plan/gate` says a story never runs itself.
 - Task statuses: `planned`, `handoff` and `awaiting_review` are gone and
   `executing` is now `in_progress`. `review` means one thing, a human
   approving before the change lands: a green PR held for a human (a

@@ -59,7 +59,7 @@ const project = { id: 1, slug: "p", name: "P" };
 
 test("buildNowStories keeps stories with an active child or recent activity, waiting ones first", () => {
   const quiet = task({ title: "quiet", status: "defined" });
-  const busy = task({ title: "busy", status: "decomposed" });
+  const busy = task({ title: "busy", status: "defined" });
   const recent = task({ title: "recent", status: "defined" });
   const closed = task({ title: "closed", status: "done" });
   const busyChildren = [
@@ -251,7 +251,7 @@ describe("against a real database", { skip: adminUrl ? false : "PINBOARD_TEST_DA
     assert.equal(body.stories.length, 1);
     const [s] = body.stories;
     assert.equal(s.id, ids.story);
-    assert.equal(s.status, "decomposed");
+    assert.equal(s.status, "defined");
     assert.deepEqual(s.project, { id: ids.project, slug: "demo", name: "Demo" });
     assert.deepEqual(s.progress, { done: 0, total: 2 });
     assert.deepEqual(s.running, []);

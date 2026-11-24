@@ -15,7 +15,6 @@ export type { ChatEvent } from "./chat-transcript.js";
 export const TASK_STATUSES = [
   "idea",
   "defined",
-  "decomposed",
   "queued",
   "in_progress",
   "needs_input",
@@ -32,6 +31,20 @@ export const TASK_STATUSES = [
   "done",
   "rejected",
 ] as const;
+
+// The phases statuses group into, and a story's rollup over its children.
+// Server-side copy: app/src/task-model.ts's TASK_PHASES/storyRollup.
+export const TASK_PHASES = ["backlog", "ready", "in_progress", "pipeline", "needs_you", "done"] as const;
+export type TaskPhase = (typeof TASK_PHASES)[number];
+
+// The statuses a story is stored in: it has no workflow status of its own.
+export const STORY_STATUSES = ["defined", "done", "rejected"] as const;
+
+export interface StoryRollup {
+  phase: TaskPhase;
+  // children per phase, rejected ones left out; a phase with none is absent.
+  counts: Partial<Record<TaskPhase, number>>;
+}
 
 export const TASK_TYPES = [
   "idea",
@@ -179,6 +192,9 @@ export interface Task {
   rootGrantedBy: string | null;
   // open and recently answered asks, on GET /tasks/:id only.
   asks?: TaskAsk[];
+  // stories only, on GET /tasks rows and GET /tasks/:id: what a story shows
+  // instead of its status.
+  rollup?: StoryRollup;
   createdAt: string;
   updatedAt: string;
 }

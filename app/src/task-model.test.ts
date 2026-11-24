@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { STATUS_ALIASES, STATUS_MIGRATION, TASK_STATUSES, canonicalStatus, normalizeTaskEnums, parentMap, storyShouldComplete, dependencySatisfied, dependencyGate, unmergedDependencies, isReviewMode } from "./task-model.js";
+import { STATUS_ALIASES, STATUS_MIGRATION, STATUS_PHASES, TASK_PHASES, TASK_STATUSES, canonicalStatus, statusPhase, storyRollup, normalizeTaskEnums, parentMap, storyShouldComplete, dependencySatisfied, dependencyGate, unmergedDependencies, isReviewMode } from "./task-model.js";
 import { rankRunnableTasks, type RunnableTask } from "./plan.js";
 
 test("unknown status, taskType or executorMode is rejected", () => {
@@ -19,10 +19,10 @@ test("backlog is rewritten to defined", () => {
   assert.equal(body.status, "defined");
 });
 
-test("the 13 statuses, plus decomposed until stories get their own model", () => {
+test("the 13 statuses", () => {
   assert.deepEqual(
     [...TASK_STATUSES].sort(),
-    ["awaiting_ci", "awaiting_merge", "decomposed", "defined", "deploying", "done", "idea", "in_progress", "needs_input", "queued", "rejected", "review", "rework", "verifying"],
+    ["awaiting_ci", "awaiting_merge", "defined", "deploying", "done", "idea", "in_progress", "needs_input", "queued", "rejected", "review", "rework", "verifying"],
   );
 });
 
@@ -33,6 +33,7 @@ test("old status names are accepted and rewritten to the current ones", () => {
     ["backlog", "defined"],
     ["executing", "in_progress"],
     ["awaiting_review", "review"],
+    ["decomposed", "defined"],
   ];
   for (const [old, now] of cases) {
     const body: Record<string, unknown> = { status: old };
@@ -55,11 +56,54 @@ test("migration 0049 moves every removed status where STATUS_MIGRATION says", ()
   }
   assert.deepEqual(Object.fromEntries([...moved].sort()), Object.fromEntries(Object.entries(STATUS_MIGRATION).sort()));
   for (const target of moved.values()) assert.ok((TASK_STATUSES as readonly string[]).includes(target), target);
-  assert.ok(!moved.has("decomposed"), "decomposed is left for the stories change");
+  assert.ok(!moved.has("decomposed"), "decomposed is 0050's");
   // a task leaving handoff gets a comment saying why
   assert.match(sql, /INSERT INTO "comments"[\s\S]*handoff is no longer a status/);
   // the migration hold keeps its meaning as a reason
   assert.match(sql, /"status" = 'review', "review_reason" = 'migration'/);
+});
+
+test("migration 0050 makes every decomposed story defined", () => {
+  const sql = readFileSync(new URL("../drizzle/0050_stories_defined.sql", import.meta.url), "utf8");
+  assert.match(sql, /UPDATE "tasks" SET "status" = 'defined' WHERE "status" = 'decomposed';/);
+  assert.equal(canonicalStatus("decomposed"), "defined");
+});
+
+test("every status has a phase", () => {
+  for (const status of TASK_STATUSES) assert.ok((TASK_PHASES as readonly string[]).includes(STATUS_PHASES[status]), status);
+  assert.equal(statusPhase("executing"), "in_progress");
+});
+
+test("a story's rollup counts its children per phase, leaving rejected ones out", () => {
+  assert.deepEqual(storyRollup("defined", ["idea", "defined", "queued", "in_progress", "awaiting_ci", "verifying", "review", "rework", "done", "rejected"]).counts, {
+    backlog: 2,
+    ready: 1,
+    in_progress: 1,
+    pipeline: 2,
+    needs_you: 2,
+    done: 1,
+  });
+});
+
+test("a story's phase: needs you, then in progress, pipeline, ready, backlog; done when every child is", () => {
+  const phase = (children: string[], story = "defined") => storyRollup(story, children).phase;
+  assert.equal(phase(["needs_input", "in_progress", "awaiting_ci"]), "needs_you");
+  assert.equal(phase(["review", "done"]), "needs_you");
+  assert.equal(phase(["rework", "queued"]), "needs_you");
+  assert.equal(phase(["in_progress", "deploying", "queued"]), "in_progress");
+  assert.equal(phase(["awaiting_merge", "queued", "defined"]), "pipeline");
+  assert.equal(phase(["queued", "defined", "done"]), "ready");
+  assert.equal(phase(["defined", "idea", "done"]), "backlog");
+  assert.equal(phase(["done", "rejected"]), "done");
+  assert.equal(phase(["rejected"]), "done");
+  // closed by hand while children were open
+  assert.equal(phase(["defined"], "done"), "done");
+  assert.equal(phase(["defined"], "rejected"), "done");
+});
+
+test("an empty story is backlog with no counts", () => {
+  assert.deepEqual(storyRollup("defined", []), { phase: "backlog", counts: {} });
+  assert.deepEqual(storyRollup("done", []), { phase: "done", counts: {} });
 });
 
 test("a story is never ranked runnable, even when queued", () => {
@@ -83,6 +127,9 @@ test("parentMap reads parent/child rows in both directions", () => {
 
 test("story completes on its last child finishing, not before", () => {
   assert.equal(storyShouldComplete("defined", ["done", "in_progress"]), false);
+  assert.equal(storyShouldComplete("defined", ["done", "review"]), false);
+  assert.equal(storyShouldComplete("defined", ["rejected"]), true);
+  assert.equal(storyShouldComplete("rejected", ["done"]), false);
   assert.equal(storyShouldComplete("defined", ["done", "rejected"]), true);
   assert.equal(storyShouldComplete("defined", []), false);
   assert.equal(storyShouldComplete("done", ["done"]), false);

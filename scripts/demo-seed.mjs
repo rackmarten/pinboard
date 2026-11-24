@@ -109,7 +109,7 @@ await handoff(story, "atlas", {
     "Wallet buttons only show on supported browsers",
   ],
 });
-await patch(`/tasks/${story.id}`, { status: "decomposed", reason: "split into children" });
+await patch(`/tasks/${story.id}`, { status: "defined", reason: "split into children" });
 await patch(`/tasks/${story.id}/checklist`, { actorType: "human", actorName: "operator", item: "Guest checkout works on a phone-sized screen", checked: true, note: "checked on a small phone" });
 
 const guest = await task(shop, "Guest checkout without an account", {

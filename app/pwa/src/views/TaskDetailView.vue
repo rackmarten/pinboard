@@ -19,6 +19,7 @@ import {
   ROOT_LABEL,
   RELATION_TYPES,
   TASK_STATUSES,
+  STORY_STATUSES,
   updateTask,
   type ChatThread,
   type Comment,
@@ -41,6 +42,7 @@ import TaskFormDialog from "../components/TaskFormDialog.vue";
 import TaskList from "../components/TaskList.vue";
 import TaskPriorityChip from "../components/TaskPriorityChip.vue";
 import TaskStatusChip from "../components/TaskStatusChip.vue";
+import StoryRollupChip from "../components/StoryRollupChip.vue";
 import { usePolling } from "../composables/usePolling.js";
 import { useTaskSearch } from "../composables/useTaskSearch.js";
 import { renderDescriptionHtml } from "../description-html.js";
@@ -440,6 +442,8 @@ async function setStatus(newStatus: string): Promise<void> {
   try {
     const updated = await updateTask(taskId.value, { status: newStatus });
     task.value = { ...task.value, ...updated };
+    // the PATCH reply has no rollup; a story closed by hand is done now.
+    if (task.value.rollup && (newStatus === "done" || newStatus === "rejected")) task.value.rollup = { ...task.value.rollup, phase: "done" };
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
   } finally {
@@ -520,7 +524,16 @@ function formatDate(iso: string): string {
       <div class="d-flex ga-2 flex-wrap align-center">
         <v-menu v-model="statusMenu">
           <template #activator="{ props: menuProps }">
+            <StoryRollupChip
+              v-if="task.rollup"
+              v-bind="menuProps"
+              :rollup="task.rollup"
+              append-icon="mdi-menu-down"
+              :disabled="updatingStatus"
+              style="cursor: pointer"
+            />
             <TaskStatusChip
+              v-else
               v-bind="menuProps"
               :status="task.status"
               append-icon="mdi-menu-down"
@@ -530,7 +543,7 @@ function formatDate(iso: string): string {
           </template>
           <v-list density="compact">
             <v-list-item
-              v-for="s in TASK_STATUSES"
+              v-for="s in task.taskType === 'story' ? STORY_STATUSES : TASK_STATUSES"
               :key="s"
               :active="s === task.status"
               :data-track="s === 'queued' ? 'queue' : 'set-status'"

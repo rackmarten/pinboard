@@ -12,7 +12,6 @@
 export const STATUS_COLORS: Record<string, string> = {
   idea: "grey",
   defined: "grey",
-  decomposed: "grey",
   queued: "info",
   in_progress: "primary",
   needs_input: "deep-orange",
@@ -33,7 +32,6 @@ export function statusColor(status: string): string {
 export const STATUS_ICONS: Record<string, string> = {
   idea: "mdi-lightbulb-outline",
   defined: "mdi-file-document-outline",
-  decomposed: "mdi-file-tree-outline",
   queued: "mdi-tray-full",
   in_progress: "mdi-cog-sync-outline",
   needs_input: "mdi-message-question-outline",
@@ -49,6 +47,46 @@ export const STATUS_ICONS: Record<string, string> = {
 
 export function statusIcon(status: string): string {
   return STATUS_ICONS[status] ?? "mdi-circle-small";
+}
+
+// A phase reads like the statuses in it (see STATUS_COLORS above).
+export const PHASE_LABELS: Record<string, string> = {
+  backlog: "Backlog",
+  ready: "Ready",
+  in_progress: "In progress",
+  pipeline: "Pipeline",
+  needs_you: "Needs you",
+  done: "Done",
+};
+
+export const PHASE_COLORS: Record<string, string> = {
+  backlog: "grey",
+  ready: "info",
+  in_progress: "primary",
+  pipeline: "secondary",
+  needs_you: "warning",
+  done: "success",
+};
+
+export const PHASE_ICONS: Record<string, string> = {
+  backlog: "mdi-file-document-outline",
+  ready: "mdi-tray-full",
+  in_progress: "mdi-cog-sync-outline",
+  pipeline: "mdi-source-merge",
+  needs_you: "mdi-account-alert-outline",
+  done: "mdi-check-circle-outline",
+};
+
+export function phaseLabel(phase: string): string {
+  return PHASE_LABELS[phase] ?? phase;
+}
+
+export function phaseColor(phase: string): string {
+  return PHASE_COLORS[phase] ?? "grey";
+}
+
+export function phaseIcon(phase: string): string {
+  return PHASE_ICONS[phase] ?? "mdi-circle-small";
 }
 
 export const TASK_TYPE_ICONS: Record<string, string> = {
