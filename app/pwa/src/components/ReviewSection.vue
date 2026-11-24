@@ -21,7 +21,8 @@ import { usePolling } from "../composables/usePolling.js";
 import TaskPriorityChip from "../components/TaskPriorityChip.vue";
 import { statusColor, taskTypeIcon } from "../display.js";
 import ChecklistPanel from "../components/ChecklistPanel.vue";
-import { approveAction, approveWarningComment, canConfirmApprove, checkedCountLabel, needsApproveWarning, uncheckedItems } from "../approve.js";
+import ApproveDialog from "../components/ApproveDialog.vue";
+import { approveWarningComment, checkedCountLabel, isPreMergeHold, needsApproveWarning, performApprove, uncheckedItems } from "../approve.js";
 import { renderDescriptionHtml } from "../description-html.js";
 import { REVIEW_STATUSES, handoffTldr } from "../inbox.js";
 
@@ -37,10 +38,6 @@ import { REVIEW_STATUSES, handoffTldr } from "../inbox.js";
 // because a bad migration is costly to unwind, and approving it without
 // opening the diff is exactly the mistake the hold exists to prevent.
 const QUEUE_STATUSES = REVIEW_STATUSES;
-
-function isPreMergeHold(task: TaskSummary): boolean {
-  return task.reviewReason === "migration";
-}
 
 const REVIEW_REASON_TEXT: Record<string, string> = {
   no_auto_deploy: "CI is green. This project has no auto-deploy, so approving merges the PR and deploys it.",
@@ -132,9 +129,7 @@ function projectName(id: number): string {
 // Approving with unticked checklist items goes through a warning dialog that
 // needs a comment; the comment is posted first, then the approve runs.
 const approveDialog = ref(false);
-useBackClose(approveDialog);
 const approveTarget = ref<TaskSummary | null>(null);
-const approveComment = ref("");
 const approveUnchecked = ref<string[]>([]);
 
 async function approve(task: TaskSummary): Promise<void> {
@@ -142,17 +137,16 @@ async function approve(task: TaskSummary): Promise<void> {
   if (!needsApproveWarning(items)) return runApprove(task);
   approveTarget.value = task;
   approveUnchecked.value = uncheckedItems(items);
-  approveComment.value = "";
   approveDialog.value = true;
 }
 
-async function confirmApprove(): Promise<void> {
+async function confirmApprove(comment: string): Promise<void> {
   const task = approveTarget.value;
-  if (!task || !canConfirmApprove(approveComment.value)) return;
+  if (!task) return;
   acting.value = task.id;
   error.value = null;
   try {
-    await addComment(task.id, approveWarningComment(approveUnchecked.value, approveComment.value));
+    await addComment(task.id, approveWarningComment(approveUnchecked.value, comment));
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
     acting.value = null;
@@ -166,19 +160,7 @@ async function runApprove(task: TaskSummary): Promise<void> {
   acting.value = task.id;
   error.value = null;
   try {
-    const action = approveAction(isPreMergeHold(task), isPreMergeHold(task) ? [] : await getPullRequests(task.id));
-    if (action === "release_hold") {
-      await addComment(task.id, "Pre-merge hold released via review queue - the pipeline may merge and deploy this.");
-      await advancePipeline(task.id, "awaiting_merge");
-    } else if (action === "merge") {
-      // move first: a stacked playtest PR is refused until its parent merges,
-      // and the comment would then claim a merge that isn't happening.
-      await advancePipeline(task.id, "awaiting_merge");
-      await addComment(task.id, "Approved via review queue - merging.");
-    } else {
-      await addComment(task.id, "Approved via review queue.");
-      await approveTask(task.id);
-    }
+    await performApprove(task, "review queue", { getPullRequests, addComment, advancePipeline, approveTask: (id) => approveTask(id) });
     await load();
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
@@ -290,37 +272,7 @@ async function confirmReject(requeue: boolean): Promise<void> {
     </v-list>
     <p v-else-if="!loading" class="text-medium-emphasis">Nothing waiting for review.</p>
 
-    <v-dialog v-model="approveDialog" max-width="480">
-      <v-card title="Approve with unchecked items?">
-        <v-card-text>
-          <p class="mb-2">These checklist items are not ticked:</p>
-          <ul class="mb-3 ml-5">
-            <li v-for="item in approveUnchecked" :key="item">{{ item }}</li>
-          </ul>
-          <v-textarea
-            v-model="approveComment"
-            label="Why approve anyway? (posted as a comment)"
-            rows="3"
-            density="comfortable"
-            autofocus
-          />
-        </v-card-text>
-        <v-card-actions>
-          <v-spacer />
-          <v-btn variant="text" @click="approveDialog = false">Cancel</v-btn>
-          <v-btn
-            variant="tonal"
-            color="success"
-            :disabled="!canConfirmApprove(approveComment)"
-            :loading="acting === approveTarget?.id"
-            data-track="approve-unticked"
-            @click="confirmApprove()"
-          >
-            Approve
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+    <ApproveDialog v-model="approveDialog" :unchecked="approveUnchecked" :loading="acting === approveTarget?.id" @confirm="confirmApprove" />
 
     <v-dialog v-model="rejectDialog" max-width="480">
       <v-card title="Reject task">

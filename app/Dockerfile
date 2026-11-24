@@ -24,6 +24,8 @@ ENV VITE_AVATAR_BASE_URL=${AVATAR_BASE_URL}
 COPY pwa/tsconfig.json pwa/vite.config.ts pwa/index.html ./
 COPY pwa/public ./public
 COPY pwa/src ./src
+# the task statuses and phases, shared with the server (src/task-status.ts).
+COPY src/task-status.ts ../src/task-status.ts
 RUN npm run build
 
 FROM node:26-alpine

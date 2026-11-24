@@ -18,9 +18,9 @@ import {
   revokeRootAccess,
   ROOT_LABEL,
   RELATION_TYPES,
-  TASK_STATUSES,
-  STORY_STATUSES,
   updateTask,
+  advancePipeline,
+  approveTask,
   type ChatThread,
   type Comment,
   type Project,
@@ -51,7 +51,9 @@ import { groupRelations } from "../relations.js";
 import { isResolved, openBlockers, orderChildren } from "../story.js";
 import JournalTimeline from "../components/JournalTimeline.vue";
 import ChecklistPanel from "../components/ChecklistPanel.vue";
-import { checkedCountLabel } from "../approve.js";
+import ApproveDialog from "../components/ApproveDialog.vue";
+import { approveWarningComment, checkedCountLabel, needsApproveWarning, performApprove, uncheckedItems } from "../approve.js";
+import { answerLink, moveComment, statusOptions, statusReadOnly, systemStatusActions, systemStatusNote } from "../status-options.js";
 import { reasoningEffortChip } from "../reasoning-effort.js";
 
 const props = defineProps<{ id: string }>();
@@ -451,6 +453,69 @@ async function setStatus(newStatus: string): Promise<void> {
   }
 }
 
+// a task in a system status shows it read-only, with what a person can do
+// about it instead (see status-options.ts).
+const readOnlyStatus = computed(() => (task.value ? statusReadOnly(task.value) : false));
+const statusActions = computed(() => (task.value && readOnlyStatus.value ? systemStatusActions(task.value.status) : []));
+const answerTo = computed(() => answerLink(openQuestions.value.length, sessionThread.value?.id ?? null));
+const acting = ref(false);
+
+// Approve is the review queue's: unticked checklist items need a comment.
+const approveDialog = ref(false);
+const approveUnchecked = ref<string[]>([]);
+
+async function approve(): Promise<void> {
+  if (!needsApproveWarning(checklist.value)) return runApprove();
+  approveUnchecked.value = uncheckedItems(checklist.value);
+  approveDialog.value = true;
+}
+
+async function runApprove(comment?: string): Promise<void> {
+  if (!task.value) return;
+  acting.value = true;
+  error.value = null;
+  try {
+    if (comment !== undefined) await addComment(taskId.value, approveWarningComment(approveUnchecked.value, comment));
+    approveDialog.value = false;
+    await performApprove(task.value, "the task page", { getPullRequests, addComment, advancePipeline, approveTask: (id) => approveTask(id) });
+    await load();
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    acting.value = false;
+  }
+}
+
+// Pull out (-> rework, a comment required) and Reject (-> rejected).
+const moveDialog = ref(false);
+useBackClose(moveDialog);
+const moveAction = ref<"pull_out" | "reject">("pull_out");
+const moveText = ref("");
+
+function openMove(action: "pull_out" | "reject"): void {
+  moveAction.value = action;
+  moveText.value = "";
+  moveDialog.value = true;
+}
+
+async function confirmMove(): Promise<void> {
+  if (!task.value || (moveAction.value === "pull_out" && !moveText.value.trim())) return;
+  const from = task.value.status;
+  const to = moveAction.value === "pull_out" ? "rework" : "rejected";
+  acting.value = true;
+  error.value = null;
+  try {
+    await addComment(taskId.value, moveComment(moveAction.value, from, moveText.value));
+    await updateTask(taskId.value, { status: to, reason: moveAction.value === "pull_out" ? "pulled out" : "rejected" });
+    moveDialog.value = false;
+    await load();
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    acting.value = false;
+  }
+}
+
 async function addRelation(): Promise<void> {
   if (!newRelationTargetId.value) return;
   addingRelation.value = true;
@@ -522,7 +587,8 @@ function formatDate(iso: string): string {
       </div>
 
       <div class="d-flex ga-2 flex-wrap align-center">
-        <v-menu v-model="statusMenu">
+        <TaskStatusChip v-if="readOnlyStatus" :status="task.status" />
+        <v-menu v-else v-model="statusMenu">
           <template #activator="{ props: menuProps }">
             <StoryRollupChip
               v-if="task.rollup"
@@ -543,7 +609,7 @@ function formatDate(iso: string): string {
           </template>
           <v-list density="compact">
             <v-list-item
-              v-for="s in task.taskType === 'story' ? STORY_STATUSES : TASK_STATUSES"
+              v-for="s in statusOptions(task)"
               :key="s"
               :active="s === task.status"
               :data-track="s === 'queued' ? 'queue' : 'set-status'"
@@ -556,6 +622,26 @@ function formatDate(iso: string): string {
         <v-chip size="small" variant="tonal" :color="taskTypeColor(task.taskType)" :prepend-icon="taskTypeIcon(task.taskType)">{{ task.taskType }}</v-chip>
         <v-chip size="small" variant="tonal" :prepend-icon="executorModeIcon(task.executorMode)">{{ task.executorMode }}</v-chip>
       </div>
+
+      <v-alert v-if="statusActions.length" type="info" density="compact" variant="tonal" icon="mdi-cog-outline" data-module="system-status">
+        <div class="d-flex align-center ga-2 flex-wrap">
+          <span class="mr-auto">{{ systemStatusNote(task.status) }}</span>
+          <v-btn v-if="statusActions.includes('answer')" size="small" variant="flat" color="primary" :to="answerTo" data-track="answer">Answer</v-btn>
+          <v-btn
+            v-if="statusActions.includes('approve')"
+            size="small"
+            variant="flat"
+            color="success"
+            :loading="acting"
+            data-track="approve"
+            @click="approve"
+          >
+            {{ task.reviewReason ? "Approve & merge" : "Approve" }}
+          </v-btn>
+          <v-btn size="small" variant="tonal" :disabled="acting" data-track="pull-out" @click="openMove('pull_out')">Pull out</v-btn>
+          <v-btn size="small" variant="text" color="error" :disabled="acting" data-track="reject" @click="openMove('reject')">Reject</v-btn>
+        </div>
+      </v-alert>
 
       <v-alert v-if="isRootTask" type="warning" density="compact" variant="tonal" icon="mdi-shield-alert">
         <div class="d-flex align-center ga-2 flex-wrap">
@@ -846,6 +932,41 @@ function formatDate(iso: string): string {
             <v-spacer />
             <v-btn variant="text" @click="showRootGrant = false">Cancel</v-btn>
             <v-btn color="error" variant="flat" :loading="grantingRoot" data-track="queue-root" @click="grantRoot">Grant root and queue</v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
+
+      <ApproveDialog v-model="approveDialog" :unchecked="approveUnchecked" :loading="acting" @confirm="runApprove" />
+
+      <v-dialog v-model="moveDialog" max-width="480">
+        <v-card :title="moveAction === 'pull_out' ? 'Pull out into rework' : 'Reject task'">
+          <v-card-text>
+            <v-textarea
+              v-model="moveText"
+              :label="moveAction === 'pull_out' ? 'Why? (posted as a comment)' : 'Reason (optional, posted as a comment)'"
+              rows="3"
+              density="comfortable"
+              autofocus
+            />
+            <div class="text-caption text-medium-emphasis">
+              <template v-if="moveAction === 'pull_out'">Takes it out of {{ task.status }} and leaves it in rework for a person.</template>
+              <template v-else>Closes it as rejected.</template>
+              <template v-if="task.status === 'in_progress'"> A run still working on it is not stopped by this; stop it from Workers first.</template>
+            </div>
+          </v-card-text>
+          <v-card-actions>
+            <v-spacer />
+            <v-btn variant="text" @click="moveDialog = false">Cancel</v-btn>
+            <v-btn
+              :color="moveAction === 'pull_out' ? 'warning' : 'error'"
+              variant="flat"
+              :disabled="moveAction === 'pull_out' && !moveText.trim()"
+              :loading="acting"
+              :data-track="moveAction === 'pull_out' ? 'pull-out-confirm' : 'reject-confirm'"
+              @click="confirmMove"
+            >
+              {{ moveAction === "pull_out" ? "Pull out" : "Reject" }}
+            </v-btn>
           </v-card-actions>
         </v-card>
       </v-dialog>

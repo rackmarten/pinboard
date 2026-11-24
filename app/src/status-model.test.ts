@@ -7,7 +7,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import Fastify, { type FastifyInstance } from "fastify";
 import postgres from "postgres";
-import { TASK_STATUSES } from "./task-model.js";
+import { SYSTEM_STATUSES, TASK_STATUSES } from "./task-model.js";
 
 // The status model change against a real Postgres: migration 0049 on a
 // database holding every removed status, and the exact calls a foreman that
@@ -203,16 +203,72 @@ describe("status model against a real database", { skip: adminUrl ? false : "PIN
     assert.ok(!ids.includes(byHuman));
   });
 
-  test("old status names are accepted on PATCH and POST", async () => {
+  test("old status names are accepted on PATCH and POST, but not into a system status", async () => {
     const id = await newTask("aliases");
-    for (const [sent, stored] of [["planned", "defined"], ["executing", "in_progress"], ["awaiting_review", "review"], ["todo", "defined"]]) {
+    for (const sent of ["planned", "todo", "backlog"]) {
       const res = await app.inject({ method: "PATCH", url: `/tasks/${id}`, payload: { status: sent } });
       assert.equal(res.statusCode, 200, res.body);
-      assert.equal(res.json().status, stored, sent);
+      assert.equal(res.json().status, "defined", sent);
+    }
+    // executing and awaiting_review name system statuses now
+    for (const [sent, hint] of [["executing", /claim/], ["awaiting_review", /pipeline/]] as const) {
+      const res = await app.inject({ method: "PATCH", url: `/tasks/${id}`, payload: { status: sent } });
+      assert.equal(res.statusCode, 400, sent);
+      assert.match(res.json().message, hint);
     }
     const handoff = await app.inject({ method: "PATCH", url: `/tasks/${id}`, payload: { status: "handoff" } });
     assert.equal(handoff.statusCode, 400);
     const created = await app.inject({ method: "POST", url: "/tasks", payload: { projectId, title: "planned one", status: "planned" } });
     assert.equal(created.json().status, "defined");
+  });
+
+  const errorOf = (res: { json: () => { error?: string; message?: string } }) => res.json().message ?? res.json().error ?? "";
+
+  test("PATCH and POST refuse every system status, naming the way in", async () => {
+    const id = await newTask("by hand");
+    for (const to of SYSTEM_STATUSES) {
+      const res = await app.inject({ method: "PATCH", url: `/tasks/${id}`, payload: { actorType: "human", actorName: "op", status: to } });
+      assert.equal(res.statusCode, 400, to);
+      assert.match(errorOf(res), to === "in_progress" ? /POST \/api\/tasks\/:id\/claim/ : /POST \/api\/tasks\/:id\/pipeline/, to);
+      const created = await app.inject({ method: "POST", url: "/tasks", payload: { projectId, title: `new ${to}`, status: to } });
+      assert.equal(created.statusCode, 400, to);
+    }
+    assert.equal((await status(id)).status, "queued", "a refused PATCH changes nothing");
+  });
+
+  test("the manual statuses move by PATCH, from a system status too", async () => {
+    const id = await newTask("manual moves", "human");
+    for (const to of ["idea", "defined", "rework", "done", "rejected", "defined"]) {
+      const res = await app.inject({ method: "PATCH", url: `/tasks/${id}`, payload: { actorType: "human", actorName: "op", status: to } });
+      assert.equal(res.statusCode, 200, `-> ${to}: ${res.body}`);
+      assert.equal(res.json().status, to);
+    }
+    const queued = await app.inject({ method: "PATCH", url: `/tasks/${id}`, payload: { status: "queued", force: true } });
+    assert.equal(queued.json().status, "queued");
+
+    // pull a task out of review and out of the pipeline by hand
+    for (const from of ["review", "awaiting_ci", "needs_input", "in_progress"]) {
+      await sql`UPDATE tasks SET status = ${from} WHERE id = ${id}`;
+      const res = await app.inject({ method: "PATCH", url: `/tasks/${id}`, payload: { actorType: "human", actorName: "op", status: "rework", reason: "pulled out" } });
+      assert.equal(res.statusCode, 200, `${from} -> rework: ${res.body}`);
+      assert.equal(res.json().status, "rework");
+    }
+  });
+
+  test("an edit that resends the current system status is no move and passes", async () => {
+    const id = await newTask("in review");
+    await sql`UPDATE tasks SET status = 'review' WHERE id = ${id}`;
+    const res = await app.inject({ method: "PATCH", url: `/tasks/${id}`, payload: { title: "in review, renamed", status: "review" } });
+    assert.equal(res.statusCode, 200, res.body);
+    assert.deepEqual([res.json().status, res.json().title], ["review", "in review, renamed"]);
+  });
+
+  test("work with no PR reaches review through the pipeline, from in_progress", async () => {
+    const id = await newTask("research");
+    // a person's claim: the agent slot is still held by an earlier test's run
+    const claim = await app.inject({ method: "POST", url: `/tasks/${id}/claim`, payload: { actorType: "human", actorName: "op" } });
+    assert.equal(claim.json().status, "in_progress", claim.body);
+    const review = await advance(id, "review");
+    assert.deepEqual([review.status, review.reviewReason], ["review", null]);
   });
 });

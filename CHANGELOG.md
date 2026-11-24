@@ -8,6 +8,17 @@ publishes the container image `ghcr.io/rackmarten/pinboard` at that version.
 ## [Unreleased]
 
 ### Added
+- Phases in the UI: the task list filters by phase (Backlog, Ready, In
+  progress, Pipeline, Needs you, Done), with the exact status as an
+  advanced filter, and the Dashboard counts open tasks per phase, split by
+  status and project. `GET /tasks` takes `phase=` (a comma list) and every
+  `GET /tasks/counts` row carries its `phase`.
+- A task in a system status shows it read-only on its page, with actions
+  instead: Approve in `review` (the review queue's approve), Answer in
+  `needs_input`, and Pull out (to `rework`, with a comment) and Reject
+  everywhere.
+- The pipeline accepts `in_progress -> review`, for a run that ends with
+  work and no PR.
 - Stories carry a `rollup` on `GET /tasks` (`view=summary` too) and
   `GET /tasks/:id`: their children counted per phase (Backlog, Ready, In
   progress, Pipeline, Needs you, Done) and one phase for the story as a
@@ -87,6 +98,16 @@ publishes the container image `ghcr.io/rackmarten/pinboard` at that version.
   never toward the period or session spend that gates dispatch.
 
 ### Changed
+- Only the manual statuses (`idea`, `defined`, `queued`, `rework`, `done`,
+  `rejected`) can be set by hand. The status select, the bulk edit and the
+  edit form offer only those, and `PATCH /tasks/:id` and `POST /tasks`
+  refuse the system statuses with a 400 naming the way in (`/claim` for
+  `in_progress`, `/pipeline` for the rest); resending a task's current
+  status still passes. The edit form sends the status only when it was
+  changed. The statuses and phases live in one module the API and the PWA
+  both build from (`app/src/task-status.ts`). Deploy foreman first: an
+  older foreman sets `review` by PATCH, which this refuses; a current one
+  moves there through the pipeline and works against either pinboard.
 - Stories have no workflow status of their own: an open story is stored as
   `defined` and shows the phase derived from its children. Migration 0050
   makes every `decomposed` story `defined`; `decomposed` is still accepted

@@ -72,6 +72,14 @@ async function task(p, title, fields = {}) {
   if (status) await patch(`/tasks/${created.id}`, { status, reason: "demo seed" });
   return created;
 }
+// A system status (review, needs_input) is reached the way a run reaches
+// it, since a PATCH only sets the manual ones: a claim, then the pipeline.
+// The claim is a person's, so the demo's agent concurrency stays free.
+async function viaRun(t, to, fields = {}) {
+  await post(`/tasks/${t.id}/claim`, { actorType: "human", actorName: "operator" });
+  if (fields.reviewReason) await post(`/tasks/${t.id}/pipeline`, { actorType: "agent", actorName: "foreman-pipeline", to: "awaiting_ci" }, "agent:foreman-pipeline");
+  return post(`/tasks/${t.id}/pipeline`, { actorType: "agent", actorName: "foreman-pipeline", to, ...fields }, "agent:foreman-pipeline");
+}
 const childOf = (child, story) => post(`/tasks/${child.id}/relations`, { toTaskId: story.id, relationType: "parent" });
 const dependsOn = (t, on) => post(`/tasks/${t.id}/relations`, { toTaskId: on.id, relationType: "depends_on" });
 const comment = (t, authorType, authorName, body) => post(`/tasks/${t.id}/comments`, { authorType, authorName, body });
@@ -147,7 +155,7 @@ await handoff(cart, "atlas", {
   checklist: ["Add two items, close the tab, reopen: both are still there", "Sign in with a saved cart: items are merged, not replaced"],
 });
 await pr(cart, shop, 43);
-await patch(`/tasks/${cart.id}`, { status: "review", reason: "ready for review" });
+await viaRun(cart, "review");
 
 await patch(`/tasks/${wallets.id}`, { status: "queued", reason: "ready" });
 await patch(`/tasks/${receipts.id}`, { status: "defined", reason: "later" });
@@ -168,7 +176,7 @@ await handoff(search, "atlas", {
   checklist: ["Search for 'creme': the brûlée shows up"],
 });
 await pr(search, shop, 44);
-await patch(`/tasks/${search.id}`, { status: "review", reviewReason: "migration", reason: "held before merge" });
+await viaRun(search, "review", { reviewReason: "migration" });
 await task(shop, "Gift cards", { executorMode: "human", taskType: "idea", priority: 1, estimatedEffort: 5, status: "idea" });
 
 // Mobile app.
@@ -179,7 +187,7 @@ const offline = await task(app, "Offline maps for saved trails", {
 await handoff(offline, "atlas", {
   summary: "Tile download works; stopped to ask how much storage a trail may use.", costUsd: 1.9, durationMs: 14 * 60_000, numTurns: 37,
 });
-await patch(`/tasks/${offline.id}`, { status: "needs_input", reason: "question for the operator" });
+await viaRun(offline, "needs_input");
 await post(`/tasks/${offline.id}/asks`, {
   question: "How much storage may one saved trail use for offline tiles?",
   context: "A long trail at full zoom is about 180 MB. Most phones in the analytics have under 8 GB free.",
@@ -197,7 +205,7 @@ await handoff(darkMode, "birch", {
   checklist: ["Switch the system theme while the app is open: it follows"],
 });
 await pr(darkMode, app, 18);
-await patch(`/tasks/${darkMode.id}`, { status: "review", reason: "ready for review" });
+await viaRun(darkMode, "review");
 await post(`/tasks/${darkMode.id}/asks`, {
   kind: "assumption", question: "Kept the old toggle's value as the default on first launch after the update.",
   context: "So nobody's theme flips unexpectedly.",
