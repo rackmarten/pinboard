@@ -11,10 +11,13 @@ import {
   PIPELINE_STATUSES,
 } from "./pipeline.js";
 
-test("a finished session enters the pipeline, or parks on a question, from in_progress", () => {
+test("a finished session enters the pipeline, waits for review, or parks on a question, from in_progress", () => {
   assert.equal(checkTransition("in_progress", "awaiting_ci").ok, true);
+  // work with no PR: a human accepts the result
+  assert.equal(checkTransition("in_progress", "review").ok, true);
   assert.equal(checkTransition("in_progress", "needs_input").ok, true);
-  assert.equal(checkTransition("in_progress", "review").ok, false);
+  assert.equal(checkTransition("in_progress", "done").ok, false);
+  assert.equal(checkTransition("in_progress", "awaiting_merge").ok, false);
 });
 
 test("the removed statuses are not pipeline states any more", () => {

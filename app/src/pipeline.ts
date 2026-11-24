@@ -61,6 +61,9 @@ export function isReviewReason(value: unknown): value is ReviewReason {
 // currently in X may be moved to any of Y":
 //
 //   in_progress       -> awaiting_ci        the session ended at a PR
+//                     -> review             the session ended with work and
+//                                           no PR (research, a draft, an LLM
+//                                           gateway answer): accept the result
 //   awaiting_ci       -> awaiting_merge     CI green, auto-deploy allowed
 //                     -> review             CI green, but held for a human
 //                                           before merge (a reviewReason:
@@ -96,7 +99,7 @@ const HANDBACK_TARGETS = ["queued", "rework", "rejected"] as const;
 //                      -> rework/rejected
 const TRANSITIONS: Record<string, readonly string[]> = {
   queued: ["needs_input"],
-  in_progress: ["awaiting_ci", "needs_input"],
+  in_progress: ["awaiting_ci", "review", "needs_input"],
   needs_input: [...HANDBACK_TARGETS],
   review: ["awaiting_merge"],
   awaiting_ci: ["awaiting_merge", "review", ...HANDBACK_TARGETS],

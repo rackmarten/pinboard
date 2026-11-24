@@ -1,44 +1,28 @@
 import type { ChatEvent } from "./chat-transcript.js";
 import type { ReasoningEffort } from "./reasoning-effort.js";
+import type { TaskPhase } from "../../src/task-status.js";
 
 export type { ChatEvent } from "./chat-transcript.js";
 
-// Kept in sync by hand with app/src/db/schema.ts's comments and
-// idea-task-management.md's "Task Lifecycle"/"Task Types" - not every
-// status needs a stage. Label assignment isn't exposed in the UI yet
-// (I1b scope is list/filter/detail/comment/create/edit). "rejected" is a
-// terminal status a human sets by hand on an accidental duplicate or
-// otherwise unwanted task - TaskListView excludes it from the default
-// (no status filter) view so it doesn't clutter the list, but it's still
-// selectable in the Status filter to find rejected tasks again.
-// Server-side copy (validated on POST/PATCH): app/src/task-model.ts.
-export const TASK_STATUSES = [
-  "idea",
-  "defined",
-  "queued",
-  "in_progress",
-  "needs_input",
-  // the post-PR pipeline, between the agent opening a PR and a
-  // human looking at the result - see app/src/pipeline.ts for what each one
-  // means and which moves between them are legal. Driven by foreman's poller,
-  // not by a person, so they show up here only to be rendered and filtered.
-  "awaiting_ci",
-  "awaiting_merge",
-  "deploying",
-  "verifying",
-  "review",
-  "rework",
-  "done",
-  "rejected",
-] as const;
-
-// The phases statuses group into, and a story's rollup over its children.
-// Server-side copy: app/src/task-model.ts's TASK_PHASES/storyRollup.
-export const TASK_PHASES = ["backlog", "ready", "in_progress", "pipeline", "needs_you", "done"] as const;
-export type TaskPhase = (typeof TASK_PHASES)[number];
-
-// The statuses a story is stored in: it has no workflow status of its own.
-export const STORY_STATUSES = ["defined", "done", "rejected"] as const;
+// The statuses, their phases and the ones a person may set by hand come
+// from the API's own module (app/src/task-status.ts), so the two sides
+// cannot drift. "rejected" is a terminal status a human sets by hand on an
+// accidental duplicate or otherwise unwanted task - TaskListView hides it
+// unless the Status filter names it.
+export {
+  MANUAL_STATUSES,
+  PHASE_STATUSES,
+  STATUS_PHASES,
+  STORY_STATUSES,
+  SYSTEM_STATUSES,
+  TASK_PHASES,
+  TASK_STATUSES,
+  isManualStatus,
+  isSystemStatus,
+  phasesToStatuses,
+  statusPhase,
+} from "../../src/task-status.js";
+export type { TaskPhase, TaskStatus } from "../../src/task-status.js";
 
 export interface StoryRollup {
   phase: TaskPhase;
@@ -242,7 +226,9 @@ async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const resp = await fetch(`${API_BASE}${path}`, { ...options, headers });
   if (!resp.ok) {
     const body = await resp.json().catch(() => ({}));
-    const message = body.error || body.message || `${path} -> ${resp.status}`;
+    // a thrown Fastify error carries its text in `message` (`error` is
+    // just "Bad Request"); a route's own reply puts it in `error`.
+    const message = (body.statusCode && body.message) || body.error || body.message || `${path} -> ${resp.status}`;
     // the readiness lint (422) lists every failure.
     throw Object.assign(new Error(Array.isArray(body.failures) ? `${message}: ${body.failures.join("; ")}` : message), {
       status: resp.status,
@@ -302,6 +288,8 @@ export interface TaskFilter {
   // explicit filter", left to the caller to decide a default (TaskListView
   // excludes rejected/done client-side in that case).
   status?: string[];
+  // phases (TASK_PHASES), narrowed by `status` when both are set.
+  phase?: string[];
   taskType?: string;
   executorMode?: string;
   // top-bar global search - matches task ID (exact) or title
@@ -326,6 +314,7 @@ export function getTaskSummaries(filter: TaskFilter = {}): Promise<TaskSummary[]
     params.set("projectId", filter.projectIds.join(","));
   }
   if (filter.status && filter.status.length) params.set("status", filter.status.join(","));
+  if (filter.phase && filter.phase.length) params.set("phase", filter.phase.join(","));
   if (filter.taskType) params.set("taskType", filter.taskType);
   if (filter.executorMode) params.set("executorMode", filter.executorMode);
   if (filter.q) params.set("q", filter.q);
@@ -337,6 +326,7 @@ export function getTaskSummaries(filter: TaskFilter = {}): Promise<TaskSummary[]
 
 export interface TaskCount {
   status: string;
+  phase: TaskPhase;
   projectId: number;
   count: number;
 }
@@ -347,6 +337,8 @@ export function getTaskCounts(): Promise<TaskCount[]> {
 
 export interface TaskInput {
   projectId: number;
+  // PATCH only: recorded with the status change in the task's history.
+  reason?: string;
   // bypasses the readiness lint on a move to `queued`.
   force?: boolean;
   title: string;

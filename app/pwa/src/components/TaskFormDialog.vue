@@ -12,7 +12,6 @@ import {
   EFFORT_LEVELS,
   EXECUTOR_MODES,
   ROOT_LABEL,
-  TASK_STATUSES,
   TASK_TYPES,
   type Label,
   type Project,
@@ -26,6 +25,7 @@ import {
   type ReasoningEffortField,
 } from "../reasoning-effort.js";
 import DescriptionEditor from "./DescriptionEditor.vue";
+import { statusOptions, statusReadOnly } from "../status-options.js";
 
 const props = defineProps<{
   modelValue: boolean;
@@ -51,6 +51,15 @@ const title = ref("");
 const description = ref("");
 const taskType = ref<string>("implementation");
 const status = ref<string>("idea");
+// the status the task had when the form opened: the page polls, so the
+// live prop can move on mid-edit, and only a status changed in the form is
+// sent. The manual statuses only (status-options.ts); a task opened in a
+// system status shows it, locked.
+const openedStatus = ref<string | null>(null);
+const statusLocked = computed(() => openedStatus.value !== null && statusReadOnly({ status: openedStatus.value, taskType: taskType.value }));
+const statusItems = computed(() =>
+  statusLocked.value ? [openedStatus.value!] : statusOptions({ status: openedStatus.value ?? "idea", taskType: taskType.value }),
+);
 const executorMode = ref<string>("human");
 const priority = ref(0);
 const estimatedEffort = ref<number | null>(null);
@@ -90,6 +99,7 @@ function reset(): void {
   description.value = t?.description ?? "";
   taskType.value = t?.taskType ?? "implementation";
   status.value = t?.status ?? "idea";
+  openedStatus.value = t?.status ?? null;
   executorMode.value = t?.executorMode ?? "human";
   priority.value = t?.priority ?? 0;
   estimatedEffort.value = t?.estimatedEffort ?? null;
@@ -155,7 +165,9 @@ async function save(force = false): Promise<void> {
     title: title.value.trim(),
     description: description.value || undefined,
     taskType: taskType.value,
-    status: status.value,
+    // only a changed status is sent: one the task has moved on from since
+    // the form opened must not be written back over the move.
+    status: props.task && status.value === openedStatus.value ? undefined : status.value,
     executorMode: executorMode.value,
     priority: priority.value,
     estimatedEffort: estimatedEffort.value,
@@ -198,7 +210,15 @@ async function save(force = false): Promise<void> {
         </div>
         <div class="d-flex ga-3">
           <v-select v-model="taskType" label="Type" :items="TASK_TYPES as readonly string[]" density="comfortable" />
-          <v-select v-model="status" label="Status" :items="TASK_STATUSES as readonly string[]" density="comfortable" />
+          <v-select
+            v-model="status"
+            label="Status"
+            :items="statusItems as readonly string[]"
+            :disabled="statusLocked"
+            :hint="statusLocked ? 'Set by a claim or the pipeline; use the actions on the task page' : undefined"
+            :persistent-hint="statusLocked"
+            density="comfortable"
+          />
         </div>
         <div class="d-flex ga-3">
           <v-select v-model="executorMode" label="Executor" :items="EXECUTOR_MODES as readonly string[]" density="comfortable" />

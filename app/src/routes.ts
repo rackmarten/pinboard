@@ -26,6 +26,7 @@ import {
 } from "./db/schema.js";
 import { mergeChecklist, parseChecklist, parseChecklistPatch } from "./checklist.js";
 import { getCostRollup, getUsageSummary, InteractiveDedupe, licenseIdForLinuxUser, runDailyDigest } from "./usage.js";
+import { isSystemStatus, isTaskPhase, phasesToStatuses, statusPhase, systemStatusRoute } from "./task-status.js";
 import { canonicalStatus, normalizeTaskEnums, parentMap, storyRollup, storyShouldComplete, isTerminalStatus, type StoryRollup, dependencySatisfied, isReviewMode, REVIEW_MODES, isReasoningEffort, REASONING_EFFORTS, effectiveReasoningEffort } from "./task-model.js";
 import { mergeBlockers, reworkStackedDependents, stackOnFor } from "./dependencies.js";
 import { readinessApplies, readinessFailures, toWorkspaceRepos, type ReadinessTask, type WorkspaceRepo } from "./readiness.js";
@@ -698,6 +699,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const q = req.query as {
       projectId?: string;
       status?: string;
+      // a comma-separated set of phases (task-status.ts's TASK_PHASES),
+      // narrowed further by status when both are given.
+      phase?: string;
       taskType?: string;
       executorMode?: string;
       hasActiveWorktree?: string;
@@ -730,11 +734,17 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     // sent as one query param. An old status name (STATUS_ALIASES) filters
     // on the one it became, so a caller asking for `executing` still finds
     // the running tasks.
-    if (q.status) {
-      const statuses = [...new Set(q.status.split(",").filter(Boolean).map(canonicalStatus))];
-      if (statuses.length === 1) conditions.push(eq(tasks.status, statuses[0]));
-      else if (statuses.length > 1) conditions.push(inArray(tasks.status, statuses));
+    let statuses: string[] | null = q.status ? [...new Set(q.status.split(",").filter(Boolean).map(canonicalStatus))] : null;
+    if (q.phase) {
+      const phases = q.phase.split(",").filter(Boolean);
+      const unknown = phases.find((p) => !isTaskPhase(p));
+      if (unknown) throw badRequest(`unknown phase '${unknown}'`);
+      const inPhases = new Set<string>(phasesToStatuses(phases));
+      statuses = statuses ? statuses.filter((s) => inPhases.has(s)) : [...inPhases];
+      if (!statuses.length) conditions.push(eq(tasks.id, -1));
     }
+    if (statuses?.length === 1) conditions.push(eq(tasks.status, statuses[0]));
+    else if (statuses && statuses.length > 1) conditions.push(inArray(tasks.status, statuses));
     if (q.taskType) conditions.push(eq(tasks.taskType, q.taskType));
     if (q.executorMode) conditions.push(eq(tasks.executorMode, q.executorMode));
     // foreman's worktree-retention sweep needs the small set of
@@ -768,12 +778,14 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // task counts by status and project, for the Dashboard: one small row
-  // per (status, project) pair instead of every task.
+  // per (status, project) pair instead of every task, each carrying its
+  // status's phase so per-phase counts are a sum over the rows.
   app.get("/tasks/counts", async () => {
-    return db
+    const rows = await db
       .select({ status: tasks.status, projectId: tasks.projectId, count: sqlRaw<number>`count(*)::int` })
       .from(tasks)
       .groupBy(tasks.status, tasks.projectId);
+    return rows.map((r) => ({ status: r.status, phase: statusPhase(r.status), projectId: r.projectId, count: r.count }));
   });
 
   app.post("/tasks", async (req, reply) => {
@@ -794,6 +806,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     if (!body.projectId || !body.title) throw badRequest("projectId and title are required");
     const enums = normalizeTaskEnums(body as Record<string, unknown>);
     if (!enums.ok) throw badRequest(enums.reason);
+    if (body.status && isSystemStatus(body.status)) throw badRequest(`status cannot be ${body.status} on a new task: ${systemStatusRoute(body.status)}`);
     const rootScope = validateRootScope(body.rootScope ?? []);
     if (!rootScope.ok) throw badRequest(rootScope.reason);
     const estimatedEffort = validateEffort(body.estimatedEffort);
@@ -874,6 +887,13 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     // above: cleared unless the caller deliberately names them.
     // A past task narrows it: see keepRepairOnPatch for which moves keep them.
     const [before] = await db.select().from(tasks).where(eq(tasks.id, id));
+    // only the statuses a person sets by hand move by PATCH; the rest mean a
+    // claim or a pipeline step happened, so they come from that call. Sending
+    // the status a task already has (an edit form saving every field) is no
+    // move and passes.
+    if (before && typeof body.status === "string" && isSystemStatus(body.status) && body.status !== before.status) {
+      throw badRequest(`status cannot be set to ${body.status} by hand: ${systemStatusRoute(body.status)}`);
+    }
     // the grant columns belong to POST /tasks/:id/root-grant alone,
     // and a root-access task only moves into `queued` with a live grant.
     const grantField = ROOT_GRANT_FIELDS.find((f) => f in body);

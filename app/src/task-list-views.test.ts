@@ -55,12 +55,14 @@ describe("against a real database", { skip: adminUrl ? false : "PINBOARD_TEST_DA
     projectA = await create("/projects", { slug: "a", name: "A" });
     projectB = await create("/projects", { slug: "b", name: "B" });
     ids.story = await create("/tasks", { projectId: projectA, title: "Story", taskType: "story", description: "the long story text" });
-    ids.child = await create("/tasks", { projectId: projectA, title: "Child", status: "review", description: "kangaroo detail" });
+    ids.child = await create("/tasks", { projectId: projectA, title: "Child", description: "kangaroo detail" });
     ids.oldDone = await create("/tasks", { projectId: projectA, title: "Old done", status: "done" });
     ids.newDone = await create("/tasks", { projectId: projectB, title: "New done", status: "done" });
     ids.idea = await create("/tasks", { projectId: projectB, title: "Idea" });
     const rel = await app.inject({ method: "POST", url: `/tasks/${ids.child}/relations`, payload: { toTaskId: ids.story, relationType: "parent" } });
     assert.equal(rel.statusCode, 201, rel.body);
+    // review is a system status, which POST /tasks refuses
+    await sql`UPDATE tasks SET status = 'review' WHERE id = ${ids.child}`;
     await sql`UPDATE tasks SET updated_at = '2026-01-01T00:00:00Z' WHERE id = ${ids.oldDone}`;
     await sql`UPDATE tasks SET updated_at = '2026-03-01T00:00:00Z' WHERE id = ${ids.newDone}`;
   });
@@ -104,18 +106,27 @@ describe("against a real database", { skip: adminUrl ? false : "PINBOARD_TEST_DA
     assert.deepEqual(all.map((t: { id: number }) => t.id).sort(), [ids.oldDone, ids.newDone].sort());
   });
 
-  test("GET /tasks/counts counts by status and project", async () => {
+  test("GET /tasks/counts counts by status and project, each row with its phase", async () => {
     const res = await app.inject({ url: "/tasks/counts" });
     assert.equal(res.statusCode, 200);
-    const counts = res.json() as { status: string; projectId: number; count: number }[];
+    const counts = res.json() as { status: string; phase: string; projectId: number; count: number }[];
     const sorted = counts.sort((a, b) => a.projectId - b.projectId || a.status.localeCompare(b.status));
     assert.deepEqual(sorted, [
-      { status: "defined", projectId: projectA, count: 1 },
-      { status: "done", projectId: projectA, count: 1 },
-      { status: "review", projectId: projectA, count: 1 },
-      { status: "done", projectId: projectB, count: 1 },
-      { status: "idea", projectId: projectB, count: 1 },
+      { status: "defined", phase: "backlog", projectId: projectA, count: 1 },
+      { status: "done", phase: "done", projectId: projectA, count: 1 },
+      { status: "review", phase: "needs_you", projectId: projectA, count: 1 },
+      { status: "done", phase: "done", projectId: projectB, count: 1 },
+      { status: "idea", phase: "backlog", projectId: projectB, count: 1 },
     ]);
+  });
+
+  test("phase filters on its statuses, narrowed by status when both are given", async () => {
+    const ids_ = async (url: string) => ((await app.inject({ url })).json() as { id: number }[]).map((t) => t.id).sort();
+    assert.deepEqual(await ids_("/tasks?view=summary&phase=backlog"), [ids.story, ids.idea].sort());
+    assert.deepEqual(await ids_("/tasks?view=summary&phase=needs_you,done"), [ids.child, ids.oldDone, ids.newDone].sort());
+    assert.deepEqual(await ids_("/tasks?view=summary&phase=done&status=done,idea"), [ids.oldDone, ids.newDone].sort());
+    assert.deepEqual(await ids_("/tasks?view=summary&phase=ready&status=idea"), []);
+    assert.equal((await app.inject({ url: "/tasks?phase=later" })).statusCode, 400);
   });
 
   test("GET /tasks/:id carries parentTaskId", async () => {

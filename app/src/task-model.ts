@@ -1,23 +1,24 @@
-// the task vocabulary the API validates against. The PWA keeps its
-// own copy in pwa/src/api.ts (it's a separate Vite build that can't import
-// from here - see the Dockerfile), so a change to either list needs the other.
-export const TASK_STATUSES = [
-  "idea",
-  "defined",
-  "queued",
-  // being worked on, by a person (a claim) or an agent run (a leased claim).
-  "in_progress",
-  // an agent paused on an unanswered question (see pipeline.ts).
-  "needs_input",
-  "awaiting_ci",
-  "awaiting_merge",
-  "deploying",
-  "verifying",
-  "review",
-  "rework",
-  "done",
-  "rejected",
-] as const;
+import { STATUS_ALIASES, TASK_STATUSES, canonicalStatus, statusPhase, type TaskPhase } from "./task-status.js";
+
+// the task vocabulary the API validates against. The statuses and their
+// phases live in task-status.ts, which the PWA imports too.
+export {
+  MANUAL_STATUSES,
+  PHASE_STATUSES,
+  STATUS_ALIASES,
+  STATUS_PHASES,
+  STORY_STATUSES,
+  SYSTEM_STATUSES,
+  TASK_PHASES,
+  TASK_STATUSES,
+  canonicalStatus,
+  isManualStatus,
+  isSystemStatus,
+  isTaskPhase,
+  statusPhase,
+  systemStatusRoute,
+} from "./task-status.js";
+export type { TaskPhase, TaskStatus } from "./task-status.js";
 
 export const TASK_TYPES = [
   "idea",
@@ -50,30 +51,11 @@ function oneOf(field: string, allowed: readonly string[], value: unknown): EnumC
   return { ok: false, reason: `${field} must be one of ${allowed.join(", ")}` };
 }
 
-// Old names a caller may still send, mapped to the status they mean now.
-// `backlog` and `todo` were never real statuses but scripts and older skill
-// text send them for "written down, not yet ready"; `planned`, `executing`
-// and `awaiting_review` were removed by migration 0049, and a foreman or
-// script that predates it keeps working through these. `decomposed` was a
-// story's label until migration 0050 made every story plain defined.
-export const STATUS_ALIASES: Readonly<Record<string, string>> = {
-  backlog: "defined",
-  todo: "defined",
-  planned: "defined",
-  executing: "in_progress",
-  awaiting_review: "review",
-  decomposed: "defined",
-};
-
 // What migration 0049 did to stored rows: every alias above but decomposed
 // (0050's), plus `handoff` (an event now, not a status) to rework, with a
 // comment. The test checks the SQL against this.
 const { decomposed: _decomposed, ...aliasesBefore0050 } = STATUS_ALIASES;
 export const STATUS_MIGRATION: Readonly<Record<string, string>> = { ...aliasesBefore0050, handoff: "rework" };
-
-export function canonicalStatus(status: string): string {
-  return STATUS_ALIASES[status] ?? status;
-}
 
 // Validates the enum fields of a POST/PATCH /tasks body in place, rewriting
 // an aliased status (STATUS_ALIASES) to its current name first.
@@ -118,31 +100,6 @@ export function storyShouldComplete(storyStatus: string, childStatuses: readonly
 
 export function isTerminalStatus(status: string): boolean {
   return TERMINAL.has(status);
-}
-
-// The phases the UI groups statuses into (the kanban columns to come).
-// rejected sits in Done, hidden by default.
-export const TASK_PHASES = ["backlog", "ready", "in_progress", "pipeline", "needs_you", "done"] as const;
-export type TaskPhase = (typeof TASK_PHASES)[number];
-
-export const STATUS_PHASES: Readonly<Record<(typeof TASK_STATUSES)[number], TaskPhase>> = {
-  idea: "backlog",
-  defined: "backlog",
-  queued: "ready",
-  in_progress: "in_progress",
-  awaiting_ci: "pipeline",
-  awaiting_merge: "pipeline",
-  deploying: "pipeline",
-  verifying: "pipeline",
-  needs_input: "needs_you",
-  review: "needs_you",
-  rework: "needs_you",
-  done: "done",
-  rejected: "done",
-};
-
-export function statusPhase(status: string): TaskPhase {
-  return STATUS_PHASES[canonicalStatus(status) as keyof typeof STATUS_PHASES] ?? "backlog";
 }
 
 // What a story shows instead of a status: its children counted per phase

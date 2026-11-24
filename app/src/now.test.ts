@@ -201,7 +201,7 @@ describe("against a real database", { skip: adminUrl ? false : "PINBOARD_TEST_DA
     ids.project = await create("/projects", { slug: "demo", name: "Demo" });
     ids.story = await create("/tasks", { projectId: ids.project, title: "Story", taskType: "story", status: "decomposed" });
     ids.child = await create("/tasks", { projectId: ids.project, title: "Child", executorMode: "agent" });
-    ids.review = await create("/tasks", { projectId: ids.project, title: "Review me", status: "review" });
+    ids.review = await create("/tasks", { projectId: ids.project, title: "Review me" });
     ids.doneStory = await create("/tasks", { projectId: ids.project, title: "Done story", taskType: "story", status: "done" });
     for (const child of [ids.child, ids.review]) {
       const rel = await app.inject({ method: "POST", url: `/tasks/${child}/relations`, payload: { toTaskId: ids.story, relationType: "parent" } });
@@ -209,6 +209,8 @@ describe("against a real database", { skip: adminUrl ? false : "PINBOARD_TEST_DA
     }
     // straight to queued, past the readiness gate POST /tasks applies
     await sql`UPDATE tasks SET status = 'queued' WHERE id = ${ids.child}`;
+    // review is a system status, which POST /tasks refuses
+    await sql`UPDATE tasks SET status = 'review' WHERE id = ${ids.review}`;
     await sql`INSERT INTO licenses (name, provider, linux_user) VALUES ('now-test', 'anthropic', 'nowtester')`;
   });
 

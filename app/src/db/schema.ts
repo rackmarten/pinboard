@@ -18,7 +18,7 @@ const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
 // Task type (idea/research/decision/architecture/implementation/bug/testing/
 // review/deployment/maintenance) and status are plain text rather than a
 // Postgres enum, so a new value doesn't need a migration of its own;
-// task-model.ts's TASK_STATUSES is the list the API accepts. The statuses:
+// task-status.ts's TASK_STATUSES is the list the API accepts. The statuses:
 // idea, defined (written down, not yet ready), queued, in_progress (being
 // worked on, by a person or an agent run), needs_input (an agent parked on a
 // question), the post-PR pipeline (awaiting_ci, awaiting_merge, deploying,
@@ -30,7 +30,7 @@ const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
 // children (task-model.ts's storyRollup). Migration 0049 folded the removed
 // ones in (planned -> defined, executing -> in_progress, awaiting_review ->
 // review, handoff -> rework) and 0050 made decomposed stories defined;
-// task-model.ts's STATUS_ALIASES still accepts their old names on the way in.
+// task-status.ts's STATUS_ALIASES still accepts their old names on the way in.
 //
 // The pipeline statuses are driven by a cheap foreman poller rather than by
 // the agent session that opened the PR. They live here, in tasks.status,

@@ -6,6 +6,8 @@ import { useDisplay } from "vuetify";
 import {
   getProjects,
   updateTask,
+  MANUAL_STATUSES,
+  TASK_PHASES,
   TASK_STATUSES,
   TASK_TYPES,
   EXECUTOR_MODES,
@@ -20,8 +22,10 @@ import TaskFormDialog from "../components/TaskFormDialog.vue";
 import TaskStatusChip from "../components/TaskStatusChip.vue";
 import StoryRollupChip from "../components/StoryRollupChip.vue";
 import SortableDataTable, { type SortItem, type SortableDataTableHeader } from "../components/SortableDataTable.vue";
-import { taskTypeColor, taskTypeIcon } from "../display.js";
+import { phaseLabel, taskTypeColor, taskTypeIcon } from "../display.js";
 import { groupTasks } from "../story.js";
+import { statusOptions, statusReadOnly } from "../status-options.js";
+import { visibleInList } from "../task-filters.js";
 
 const route = useRoute();
 const router = useRouter();
@@ -42,6 +46,7 @@ function filterFromQuery(): TaskFilter {
   return {
     projectId: q.projectId ? Number(q.projectId) : undefined,
     status: typeof q.status === "string" ? q.status.split(",").filter(Boolean) : undefined,
+    phase: typeof q.phase === "string" ? q.phase.split(",").filter(Boolean) : undefined,
     taskType: typeof q.taskType === "string" ? q.taskType : undefined,
     executorMode: typeof q.executorMode === "string" ? q.executorMode : undefined,
   };
@@ -49,6 +54,10 @@ function filterFromQuery(): TaskFilter {
 
 const projects = ref<Project[]>([]);
 const filter = ref<TaskFilter>(filterFromQuery());
+const phaseItems = TASK_PHASES.map((p) => ({ value: p, title: phaseLabel(p) }));
+// the exact-status filter is the advanced one, behind a toggle, and open
+// already when a link or bookmark sets it.
+const showExactStatus = ref(!!filter.value.status?.length);
 // Column-header sort, persisted to the URL the same way filters are - Task
 // #104's default is id desc, so the query string stays clean unless a
 // column other than id is sorted.
@@ -106,19 +115,13 @@ const search = ref<string | null>(typeof route.query.q === "string" ? route.quer
 const { tasks: allTasks, loading, error, load } = useTasks(filter);
 const { results: searchResults } = useTaskSearch(search, () => filter.value);
 
-// Status is a multi-select. Rejected and done tasks (accidental
-// duplicates, finished work) stay in the default view's data but are hidden
-// here unless the Status filter explicitly includes them - keeps them out
-// of the way without deleting the row or letting a deleted/renumbered ID
-// confuse later task references. Once the filter is explicit, the backend
-// has already narrowed to exactly those statuses, so no further exclusion
-// applies here.
-const DEFAULT_HIDDEN_STATUSES = new Set(["rejected", "done"]);
+// Filtering is by phase (the exact status is the advanced filter). Done and
+// rejected tasks stay out of the default view, and rejected ones out of
+// the Done phase too, unless the Status filter names them - see
+// task-filters.ts. The backend has already narrowed to the filters.
 const tasks = computed(() => {
   const q = (search.value ?? "").trim().toLowerCase();
-  const base = filter.value.status?.length
-    ? allTasks.value
-    : allTasks.value.filter((t) => !DEFAULT_HIDDEN_STATUSES.has(t.status));
+  const base = allTasks.value.filter((t) => visibleInList(t.status, filter.value));
   if (!q) return base;
   const serverIds = new Set(searchResults.value?.map((t) => t.id));
   return base.filter((t) => serverIds.has(t.id) || t.title.toLowerCase().includes(q) || `#${t.id}` === q);
@@ -214,6 +217,7 @@ watch([filter, sortBy, search, page], () => {
     query: {
       projectId: filter.value.projectId ?? undefined,
       status: filter.value.status?.length ? filter.value.status.join(",") : undefined,
+      phase: filter.value.phase?.length ? filter.value.phase.join(",") : undefined,
       taskType: filter.value.taskType ?? undefined,
       executorMode: filter.value.executorMode ?? undefined,
       sort: isDefaultSort ? undefined : primarySort?.key,
@@ -313,8 +317,22 @@ async function applyBulkEdit(): Promise<void> {
         style="min-width: 180px"
       />
       <v-select
+        v-model="filter.phase"
+        label="Phase"
+        :items="phaseItems"
+        multiple
+        chips
+        closable-chips
+        clearable
+        density="comfortable"
+        style="min-width: 220px"
+        hint="Defaults to hiding done"
+        persistent-hint
+      />
+      <v-select
+        v-if="showExactStatus"
         v-model="filter.status"
-        label="Status"
+        label="Exact status"
         :items="TASK_STATUSES as readonly string[]"
         multiple
         chips
@@ -322,7 +340,7 @@ async function applyBulkEdit(): Promise<void> {
         clearable
         density="comfortable"
         style="min-width: 220px"
-        hint="Defaults to hiding rejected/done"
+        hint="Narrows the phases; names rejected to show it"
         persistent-hint
       />
       <v-select
@@ -341,6 +359,17 @@ async function applyBulkEdit(): Promise<void> {
         density="comfortable"
         style="min-width: 160px"
       />
+      <v-btn
+        v-if="!showExactStatus"
+        variant="text"
+        size="small"
+        class="align-self-center"
+        prepend-icon="mdi-filter-variant"
+        data-track="exact-status"
+        @click="showExactStatus = true"
+      >
+        Exact status
+      </v-btn>
     </div>
 
     <v-alert v-if="error" type="error" density="compact" variant="tonal">{{ error }}</v-alert>
@@ -361,7 +390,9 @@ async function applyBulkEdit(): Promise<void> {
           <v-select
             v-model="bulkStatus"
             label="Status"
-            :items="TASK_STATUSES as readonly string[]"
+            :items="MANUAL_STATUSES as readonly string[]"
+            hint="Only the statuses set by hand; the rest come from a claim or the pipeline"
+            persistent-hint
             clearable
             density="comfortable"
           />
@@ -472,10 +503,11 @@ async function applyBulkEdit(): Promise<void> {
       </template>
       <template #item.status="{ item }">
         <StoryRollupChip v-if="item.rollup" :rollup="item.rollup" />
+        <TaskStatusChip v-else-if="statusReadOnly(item)" :status="item.status" />
         <v-select
           v-else
           :model-value="item.status"
-          :items="TASK_STATUSES as readonly string[]"
+          :items="statusOptions(item) as readonly string[]"
           density="compact"
           variant="plain"
           hide-details

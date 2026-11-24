@@ -181,11 +181,11 @@ the root. Old root API calls are no longer aliased.
 | `GET /projects` / `POST /projects` | List / create projects (`localPath` is the local checkout's path relative to `work`'s workspace root, e.g. `my-org/my-repo`; used by `work plan sync`) |
 | `GET /projects/:id` / `PATCH /projects/:id` | Read / update a project. `reviewMode` is `standard` or `playtest` (400 otherwise). `defaultReasoningEffort` is `medium`, `high` or `null` (see "Reasoning effort") |
 | `GET /projects/:id/handoffs?limit=` | Latest handoffs for a project, most recent first - powers `work plan sync` |
-| `GET /tasks?projectId=&status=&taskType=&executorMode=&parentTaskId=&q=&doneSince=&view=` | Filtered task list. Each row carries `parentTaskId` (from `parent`/`child` relations, `null` if none); `parentTaskId=` lists that task's children. `q` matches the id (`12` or `#12`) or title and description keywords. `doneSince=<ISO time>` keeps `done` tasks updated after it. `view=summary` leaves out `description`, the repair notes, the root-grant and session fields, which is what the PWA's lists ask for. A `story` row also carries its `rollup` (see "Phases and stories") |
-| `GET /tasks/counts` | Task counts as `[{status, projectId, count}]`, for the Dashboard |
-| `POST /tasks` | Create a task. `status`/`taskType`/`executorMode` must be known values (list in `app/src/task-model.ts`) or it's a 400; an old status name (`backlog`, `planned`, `executing`, ..., see "Task statuses") is rewritten to its current one. `reasoningEffort` is `medium`, `high` or `null`. Same rules on `PATCH /tasks/:id` |
+| `GET /tasks?projectId=&status=&phase=&taskType=&executorMode=&parentTaskId=&q=&doneSince=&view=` | Filtered task list. `status` and `phase` take comma lists; `phase` (see "Phases and stories", an unknown one is a 400) is narrowed by `status` when both are given. Each row carries `parentTaskId` (from `parent`/`child` relations, `null` if none); `parentTaskId=` lists that task's children. `q` matches the id (`12` or `#12`) or title and description keywords. `doneSince=<ISO time>` keeps `done` tasks updated after it. `view=summary` leaves out `description`, the repair notes, the root-grant and session fields, which is what the PWA's lists ask for. A `story` row also carries its `rollup` (see "Phases and stories") |
+| `GET /tasks/counts` | Task counts as `[{status, phase, projectId, count}]`, for the Dashboard; per-phase counts are the sum over a phase's rows |
+| `POST /tasks` | Create a task. `status`/`taskType`/`executorMode` must be known values (list in `app/src/task-model.ts`) or it's a 400; an old status name (`backlog`, `planned`, `executing`, ..., see "Task statuses") is rewritten to its current one. `reasoningEffort` is `medium`, `high` or `null`. Same rules on `PATCH /tasks/:id`, and both refuse a system status with a 400 (see "Task statuses") |
 | `GET /tasks/:id` | Task detail, including its `parentTaskId`, labels, open asks, `stackOn` (see "Playtest review") and, on a `story`, its `rollup` (see "Phases and stories") |
-| `PATCH /tasks/:id` | Update a task. When a child of a `story` task reaches `done`/`rejected` (here, via `/complete` or the pipeline) and all its siblings are too, the story moves to `done` with a `status` event from `system`/`pinboard`. A `story` is never ranked runnable by `/plan` |
+| `PATCH /tasks/:id` | Update a task. `status` takes only the manual statuses (`idea`, `defined`, `queued`, `rework`, `done`, `rejected`); any other is a 400 that names the way in (`/claim` for `in_progress`, `/pipeline` for the rest). Resending the status the task already has passes. When a child of a `story` task reaches `done`/`rejected` (here, via `/complete` or the pipeline) and all its siblings are too, the story moves to `done` with a `status` event from `system`/`pinboard`. A `story` is never ranked runnable by `/plan` |
 | `GET /tasks/:id/comments` / `POST /tasks/:id/comments` | Task discussion thread |
 | `GET /tasks/:id/root-grant` | Root grant state: `{ active, ctids, expiresAt, grantedAt, grantedBy }`. What a root proxy asks before every call |
 | `POST /tasks/:id/root-grant` | Operator only (see "Root access"): `{ ttlHours? }` (default 4, max 24) grants the task's `rootScope` and queues it |
@@ -294,7 +294,8 @@ ends the same way any other retry does.
 
 #### Task statuses
 
-Thirteen, one meaning each (`TASK_STATUSES` in `app/src/task-model.ts`):
+Thirteen, one meaning each (`TASK_STATUSES` in `app/src/task-status.ts`,
+the one module the API and the PWA both build from):
 
 | Status | Meaning |
 | --- | --- |
@@ -307,10 +308,25 @@ Thirteen, one meaning each (`TASK_STATUSES` in `app/src/task-model.ts`):
 | `rework` | Sent back, for a human or a requeue |
 | `done`, `rejected` | Closed |
 
+Only six are set by hand (`MANUAL_STATUSES`): `idea`, `defined`, `queued`,
+`rework`, `done` and `rejected`. They are all the status select, the bulk
+edit, `PATCH /tasks/:id` and `work task update --status` offer. The other
+seven are system statuses: each means something happened, so only the call
+that makes it happen sets it. `in_progress` comes from `POST
+/tasks/:id/claim` (`work task claim`), the rest from foreman's run and
+poller through `POST /tasks/:id/pipeline`. A PATCH or a create naming one
+gets a 400 that says so. In the PWA a task in a system status shows it
+read-only with what a person can do instead: Approve in `review` (the same
+approve as the review queue: release a hold, merge an open PR, or accept
+the result), Answer in `needs_input` (the open question in the inbox, or the
+session chat it was asked in), and everywhere Pull out (to `rework`, with a
+comment) and Reject (to `rejected`).
+
 A handoff is an event, not a status: `POST /tasks/:id/handoff`
 records it and leaves the status alone, and the caller moves the task on.
 The pipeline's moves: `in_progress -> awaiting_ci` (the session ended at a
-PR), `awaiting_ci -> awaiting_merge` (green, auto-deploy allowed) or
+PR) or `-> review` (it ended with work and no PR, for a human to accept),
+`awaiting_ci -> awaiting_merge` (green, auto-deploy allowed) or
 `-> review` (green but held for a human), `review -> awaiting_merge`,
 `awaiting_merge -> deploying`, or `-> done` when the repo has nothing to
 deploy, `deploying -> verifying -> done` for every executor mode. There is no
@@ -319,10 +335,13 @@ sign-off after a deploy; testing by hand is its own human task in the story.
 #### Phases and stories
 
 The UI groups statuses into phases (`STATUS_PHASES` in
-`app/src/task-model.ts`): Backlog (`idea`, `defined`), Ready (`queued`),
+`app/src/task-status.ts`): Backlog (`idea`, `defined`), Ready (`queued`),
 In progress (`in_progress`), Pipeline (`awaiting_ci`, `awaiting_merge`,
 `deploying`, `verifying`), Needs you (`needs_input`, `review`, `rework`) and
-Done (`done`, and `rejected`, hidden by default).
+Done (`done`, and `rejected`, hidden by default). The task list filters by
+phase (the exact status is an advanced filter behind "Exact status", and
+the only way to list `rejected`), and the Dashboard counts open tasks per
+phase, each split by status and project.
 
 A `story` has no workflow status of its own. It is stored as `defined` while
 open (`decomposed`, its old label, is still accepted and stored as
@@ -347,13 +366,17 @@ project has no auto-deploy opt-in) or `production`. It is set by the
 pipeline's move into `review` and cleared by any other status change.
 
 Old status names are still accepted on the way in (task create and update,
-the `status` filter, the pipeline endpoint), so a script or foreman from
-before this change keeps working and the two can deploy in either order:
+the `status` filter, the pipeline endpoint; on create and update one that
+names a system status is refused like the status itself), so a script or foreman from
+before this change keeps working:
 `planned`, `todo` and `backlog` mean `defined`, `executing` means
 `in_progress`, and `awaiting_review` means `review` with reason `migration`.
 A pipeline move to `review` from `awaiting_merge` or `verifying` (the old
 post-deploy sign-off) lands in `done`. Migration 0049 moved the stored rows
 the same way, and a task left in `handoff` to `rework` with a comment.
+A foreman from before the manual-status change still PATCHes `review` for a
+run with no PR, which is now refused, so deploy foreman before pinboard; a
+current foreman moves through the pipeline and works with either.
 
 A past task adds three guards:
 

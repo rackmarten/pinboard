@@ -1,5 +1,5 @@
 /// <reference types="vitest/config" />
-import { defineConfig } from "vite";
+import { defineConfig, searchForWorkspaceRoot } from "vite";
 import vue from "@vitejs/plugin-vue";
 
 export default defineConfig({
@@ -23,6 +23,9 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
+    // the task statuses and phases are the API's own module
+    // (../src/task-status.ts), imported from outside this project's root.
+    fs: { allow: [searchForWorkspaceRoot(process.cwd()), "../src/task-status.ts"] },
     // Dev-only: the API isn't part of this Vite project (it's the sibling
     // Fastify app in ../src, normally served from the same origin in
     // production - see ../Dockerfile). Proxying to the real pinboard LXC
