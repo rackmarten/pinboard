@@ -116,6 +116,11 @@ publishes the container image `ghcr.io/rackmarten/pinboard` at that version.
   for clients that accept it. JSON responses carry an ETag and
   `cache-control: no-cache`, so a poll that finds nothing new gets an
   empty 304 instead of the whole list again.
+- Compression, ETags and the 304s now come from `@rackmarten/server-kit`
+  0.11.0's `createApp`, and the PWA is served through its `spa` option
+  again. The PWA's hashed `assets/` files are cached as immutable for a
+  year; `index.html` is still revalidated on every load. A request body
+  sent with a `Content-Encoding` header is no longer inflated.
 - A task's page and the Workers view poll only the tail of a task's
   activity: `GET /tasks/:id/events` takes `type` and `limit` (the newest
   `limit` events, at most 500, oldest first), and task events are indexed
