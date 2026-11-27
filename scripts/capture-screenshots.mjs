@@ -54,7 +54,10 @@ try {
     // Let late renders (charts, chips filled from a second request) settle.
     await page.waitForTimeout(1500);
     const png = await page.screenshot({ animations: "disabled" });
-    const optimised = await sharp(png).png({ palette: true, quality: 80, dither: 0.4, effort: 10, compressionLevel: 9 }).toBuffer();
+    // Lossless truecolour, only recompressed. A 256-colour palette cannot hold
+    // AppShell's faint background glow next to the UI's own colours: it
+    // banded into hard edges and dithered stray blues into the gradient.
+    const optimised = await sharp(png).png({ compressionLevel: 9, adaptiveFiltering: true, effort: 10 }).toBuffer();
     await writeFile(`${outDir}/${shot.name}.png`, optimised);
     console.log(`${shot.name}.png ${Math.round(optimised.length / 1024)} KB`);
     await context.close();
