@@ -100,6 +100,28 @@ test("decide markers fail, settled decisions pass", () => {
   }
 });
 
+test("markers behind list bullets, checkboxes, quotes and bold fail", () => {
+  for (const line of ["- TBD: pick a port", "* ? which table", "+ Open question: x", "1. Decide whether to keep it", "2) TBD", "- [ ] Decide: a or b", "  - [ ] Open questions: which port", "> Decide whether ...", "**TBD**: pick a port", "- **Open question:** which port", "?"]) {
+    const f = readinessFailures({ ...ready, description: body + "\n" + line }, repos);
+    assert.equal(f.length, 1, line);
+    assert.match(f[0], /unresolved questions/);
+  }
+  for (const line of ["- Decided in planning: use port 8080", "* the TBD list is empty", "- [x] Decided: a", "- [x] Decide: Postgres or SQLite (Postgres)", "- [X] TBD: port, now 8080", "- ?phase=ready returns only ready tasks", "## Open questions"]) {
+    assert.deepEqual(readinessFailures({ ...ready, description: body + "\n" + line }, repos), [], line);
+  }
+});
+
+test("a settled open-questions line passes, a real or hedged one fails", () => {
+  for (const line of ["Open questions: none", "Open questions: none, all settled in planning", "Open question: n/a", "Open questions resolved in planning", "- Open questions: settled", "Open questions: answered below", "Open questions - none", "Open questions — none", "**Open questions:** none"]) {
+    assert.deepEqual(readinessFailures({ ...ready, description: body + "\n" + line }, repos), [], line);
+  }
+  for (const line of ["Open questions: which port", "Open questions", "Open questions: nonetheless pick a port", "Open questions: resolved, except which port", "Open questions: none yet", "Open questions: settled? not sure", "Open questions: answered but the port is open"]) {
+    const f = readinessFailures({ ...ready, description: body + "\n" + line }, repos);
+    assert.equal(f.length, 1, line);
+    assert.match(f[0], /unresolved questions/);
+  }
+});
+
 test("foreman's own handbacks into queued are not linted", () => {
   assert.equal(readinessApplies("in_progress"), false);
   assert.equal(readinessApplies("needs_input"), false);
