@@ -89,6 +89,17 @@ test("unresolved-question markers fail", () => {
   }
 });
 
+test("decide markers fail, settled decisions pass", () => {
+  for (const line of ["Decide: a or b", "Decide whether to keep it", "  Decide"]) {
+    const f = readinessFailures({ ...ready, description: body + "\n" + line }, repos);
+    assert.equal(f.length, 1, line);
+    assert.match(f[0], /unresolved questions/);
+  }
+  for (const line of ["Decided in planning: use port 8080", "Decided: a", "Decision: keep it", "Decisions made up front"]) {
+    assert.deepEqual(readinessFailures({ ...ready, description: body + "\n" + line }, repos), [], line);
+  }
+});
+
 test("foreman's own handbacks into queued are not linted", () => {
   assert.equal(readinessApplies("in_progress"), false);
   assert.equal(readinessApplies("needs_input"), false);
