@@ -160,6 +160,10 @@ publishes the container image `ghcr.io/rackmarten/pinboard` at that version.
   means.
 
 ### Fixed
+- The README screenshots were saved as 256-colour PNGs, which turned the
+  faint background glow into hard-edged bands with stray blue dithering.
+  `scripts/capture-screenshots.mjs` now writes lossless truecolour PNGs, and
+  the screenshots are regenerated.
 - `scripts/smoke-public-stack.sh` created its agent with executor `claude-code`,
   which foreman never dispatches to, so the pickup check always timed out. It
   now uses `cli`, and the README quickstart says agents need executor `cli`.
