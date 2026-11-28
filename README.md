@@ -408,7 +408,10 @@ A past task adds three guards:
   set and <= 8, priority > 0, autonomyLevel set, the description is >= 200
   chars with an `Acceptance`/`Done when` line, every other workspace repo it
   mentions as a path or `repo#N` is in `relatedProjectIds`, and no line
-  starts with `TBD`, `?`, `Open question` or `Decide`. `force: true`
+  starts with `TBD`, a lone `?`, `Open question(s)` or the word `Decide`,
+  also behind a quote, list bullet, unticked `[ ]` checkbox or bold (a
+  ticked `[x]` item is settled, and so is "Open questions: none", n/a,
+  resolved, settled or answered). `force: true`
   bypasses it; the task form shows the failures and a "Queue anyway" button.
   A move from `in_progress` or `needs_input` is not linted: that is foreman
   handing back a task that already ran, and refusing it strands the task.

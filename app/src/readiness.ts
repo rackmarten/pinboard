@@ -19,11 +19,17 @@ export type ReadinessTask = {
 export type WorkspaceRepo = { id: number; repo: string; org?: string };
 
 const ACCEPTANCE = /^(#+\s*)?(acceptance|done when)/im;
-// A marker may sit behind a list bullet (`-`, `*`, `+`, `1.`, `1)`) or a
-// checkbox (`- [ ]`). `Decide\b`, so a settled "Decided: ..." line passes, and
-// an "Open questions: none" (or n/a, resolved, settled, answered) line passes.
-const UNRESOLVED =
-  /^\s*(?:(?:[-*+]|\d+[.)])\s+)?(?:\[[ xX]\]\s+)?(TBD|\?|Open questions?\b(?!\s*:?\s*(?:none|n\/a|resolved|settled|answered)\b)|Decide\b)/im;
+// A line holds an unresolved question when it starts with a marker: `TBD`,
+// a lone `?`, `Open question(s)` or the word `Decide` (so "Decided: ..."
+// passes). The marker may sit behind a blockquote, a list bullet (`-`, `*`,
+// `+`, `1.`, `1)`), an unticked checkbox (`[ ]`; a ticked `[x]` is settled)
+// and bold. `?` needs a space or end of line after it, so a bulleted
+// `?phase=...` query string is not one. "Open questions: none" (or n/a,
+// resolved, settled, answered) passes, unless the rest of the line hedges
+// with a `?`, except, but, yet or other than.
+const PREFIX = String.raw`^\s*(?:>\s*)?(?:(?:[-*+]|\d+[.)])\s+)?(?:\[ \]\s+)?(?:\*\*|__)?`;
+const SETTLED = String.raw`(?:\*\*|__)?\s*[:\-–—]?\s*(?:\*\*|__)?\s*(?:none|n\/a|resolved|settled|answered)\b(?!.*(?:\?|\b(?:except|but|yet|other than)\b))`;
+const UNRESOLVED = new RegExp(`${PREFIX}(TBD|\\?(?=\\s|$)|Open questions?\\b(?!${SETTLED})|Decide\\b)`, "im");
 
 function escape(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
