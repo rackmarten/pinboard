@@ -163,7 +163,7 @@ publishes the container image `ghcr.io/rackmarten/pinboard` at that version.
 - The readiness lint read any line starting with "Decide" as an open
   question, so a settled "Decided in planning: ..." line refused the move to
   `queued` with "unresolved questions". It now matches only the whole word
-  (`Decide:`, `Decide whether ...`), and `Decided`/`Decision` lines pass.
+  (`Decide:`, `Decide whether ...`), and `Decided` lines pass.
 - The README screenshots were saved as 256-colour PNGs, which turned the
   faint background glow into hard-edged bands with stray blue dithering.
   `scripts/capture-screenshots.mjs` now writes lossless truecolour PNGs, and
