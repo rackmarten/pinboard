@@ -19,8 +19,11 @@ export type ReadinessTask = {
 export type WorkspaceRepo = { id: number; repo: string; org?: string };
 
 const ACCEPTANCE = /^(#+\s*)?(acceptance|done when)/im;
-// `Decide\b`, so a settled "Decided: ..." line passes.
-const UNRESOLVED = /^\s*(TBD|\?|Open question|Decide\b)/im;
+// A marker may sit behind a list bullet (`-`, `*`, `+`, `1.`, `1)`) or a
+// checkbox (`- [ ]`). `Decide\b`, so a settled "Decided: ..." line passes, and
+// an "Open questions: none" (or n/a, resolved, settled, answered) line passes.
+const UNRESOLVED =
+  /^\s*(?:(?:[-*+]|\d+[.)])\s+)?(?:\[[ xX]\]\s+)?(TBD|\?|Open questions?\b(?!\s*:?\s*(?:none|n\/a|resolved|settled|answered)\b)|Decide\b)/im;
 
 function escape(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

@@ -160,6 +160,12 @@ publishes the container image `ghcr.io/rackmarten/pinboard` at that version.
   means.
 
 ### Fixed
+- The readiness lint missed open-question markers written as list items
+  (`- TBD: ...`, `1. Decide whether ...`, `- [ ] Open question: ...`), so
+  those tasks queued. It now looks past a list bullet or checkbox.
+- The readiness lint read a settled "Open questions: none" line as an open
+  question. A line that says the open questions are none, n/a, resolved,
+  settled or answered now passes.
 - The readiness lint read any line starting with "Decide" as an open
   question, so a settled "Decided in planning: ..." line refused the move to
   `queued` with "unresolved questions". It now matches only the whole word
