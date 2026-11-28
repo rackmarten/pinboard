@@ -19,7 +19,8 @@ export type ReadinessTask = {
 export type WorkspaceRepo = { id: number; repo: string; org?: string };
 
 const ACCEPTANCE = /^(#+\s*)?(acceptance|done when)/im;
-const UNRESOLVED = /^\s*(TBD|\?|Open question|Decide)/im;
+// `Decide\b`, so a settled "Decided: ..." line passes.
+const UNRESOLVED = /^\s*(TBD|\?|Open question|Decide\b)/im;
 
 function escape(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
